@@ -1,0 +1,24 @@
+services:
+  app:
+    image: roomserver:latest
+    command: "npx prisma migrate dev --name init && node src/index.js"
+    working_dir: /
+    stdin_open: true 
+    tty: true
+    environment:
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: room_db
+      POSTGRES_USER: oluseun
+    ports:
+      - 3000:3000
+
+  myroom:
+    image: postgres
+    volumes:
+      - room-volume:/var/lib/postgresql/data
+    environment:
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: room_db
+      POSTGRES_USER: oluseun
+volumes:
+  room-volume:
