@@ -42,6 +42,7 @@ const http_1 = require("http");
 const dotenv = __importStar(require("dotenv"));
 dotenv.config();
 const origin = process.env.ORIGIN || 'https://127.0.0.1:5173';
+const port = Number(process.env.PORT) || 10000;
 const allowedMethods = ["PUT", "POST", "GET"];
 const app = (0, express_1.default)();
 const httpServer = (0, http_1.createServer)(app);
@@ -148,6 +149,6 @@ app.post("/chat/setchat", (request, response) => {
         response.send("done");
     });
 });
-httpServer.listen(10000, "0.0.0.0", () => {
+httpServer.listen(port, "0.0.0.0", () => {
     console.log("server is up");
 });
