@@ -21,7 +21,7 @@ import * as dotenv from 'dotenv'
 dotenv.config()
 
 const origin = process.env.ORIGIN || 'https://127.0.0.1:5173';
-const port = process.env.PORT || 10000
+const port = process.env.PORT
 const allowedMethods = ["PUT", "POST", "GET"];
 const app = express();
 const httpServer = createServer(app);
