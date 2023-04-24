@@ -148,9 +148,6 @@ app.post("/chat/setchat", (request, response) => {
     response.send("done");
   });
 });
-app.listen(3000, () => {
-  console.log("server up in app")
-})
 httpServer.listen(10000, () => {
   console.log("server is up");
 });
