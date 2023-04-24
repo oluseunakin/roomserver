@@ -149,6 +149,6 @@ app.post("/chat/setchat", (request, response) => {
     response.send("done");
   });
 });
-app.listen(port, () => {
+httpServer.listen(port, () => {
   console.log("server is up at "+port);
 });
