@@ -39,7 +39,6 @@ export const createOrFindUser = async (user: User) => {
       where: { name: user.name },
     });
   } catch (e) {
-    console.log(e)
     return await prismaClient.user.create({ data: user });
   }
 };
@@ -67,13 +66,16 @@ export const updateUserRooms = async (name: string, rooms: Room[]) => {
 
 export const findUser = async (username: string) => {
   try {
-    return await prismaClient.user.findUniqueOrThrow({
+    const user = await prismaClient.user.findUniqueOrThrow({
       where: {
         name: username,
       },
       include: { myrooms: { select: { name: true } } },
     });
+    console.log(user)
+    return user
   } catch (e) {
+    console.log(e)
     return { error: "User not found" };
   }
 };
