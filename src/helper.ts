@@ -1,5 +1,4 @@
 import {
-  Chat,
   Message,
   Prisma,
   PrismaClient,
@@ -36,12 +35,11 @@ export const createOrFindRoom = async (room: Room) => {
 
 export const createOrFindUser = async (user: User) => {
   try {
-    const foundUser = await prismaClient.user.findUniqueOrThrow({
+    return await prismaClient.user.findUniqueOrThrow({
       where: { name: user.name },
     });
-    return foundUser;
   } catch (e) {
-    //console.log(e)
+    console.log(e)
     return await prismaClient.user.create({ data: user });
   }
 };

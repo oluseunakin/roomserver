@@ -8,8 +8,7 @@
     "dev": "nodemon src/index.js",
     "build": "npx prisma migrate dev --name init",
     "deploy": "npm install && npx prisma migrate deploy && npx prisma generate",
-    "start": "node src/index.js"
-
+    "start": "npx tsc && node src/index.js"
   },
   "keywords": [],
   "author": "",

@@ -20,8 +20,8 @@ import { Message, Room, User } from "@prisma/client";
 import * as dotenv from 'dotenv'
 dotenv.config()
 
-const origin = process.env.ORIGIN || 'https://127.0.0.1:5173';
-const port = process.env.PORT
+const origin = process.env.ORIGIN || 'http://127.0.0.1:5173';
+const port = process.env.PORT? process.env.PORT : 3000
 const allowedMethods = ["PUT", "POST", "GET"];
 const app = express();
 const httpServer = createServer(app);
