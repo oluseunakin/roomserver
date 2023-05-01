@@ -88,7 +88,8 @@ app.use((request, response, next) => {
 app.get("/", (request, response) => {
   response.end("welcome");
 });
-app.post("/delete", (request, response) => {
+
+app.post("/deletetables", (request, response) => {
   request.on("data", async (tablenames) => {
     let names: string | string[] = tablenames;
     if (tablenames.indexOf(",") !== -1) {
@@ -99,6 +100,7 @@ app.post("/delete", (request, response) => {
     return response.send(rows)
   });
 });
+
 app.put("/room/createroom", async (request, response) => {
   request.on("data", async (data) => {
     return response.json(await createOrFindRoom(JSON.parse(data)));
