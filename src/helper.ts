@@ -173,10 +173,12 @@ export const getAllRooms = async () => {
 };
 
 export const deleteTables = async (names: string | string[]) => {
+  let rowsAffected = 0
   if(Array.isArray(names)) {
-    names.forEach(name => {
-      prismaClient.$executeRaw`DELETE FROM ${name}`
+    names.forEach(async (name) => {
+      rowsAffected += await prismaClient.$executeRaw`DELETE FROM ${name}`
     })
   }
-  else prismaClient.$executeRaw`DELETE FROM ${names}`
+  else rowsAffected += await prismaClient.$executeRaw`DELETE FROM ${names}`
+  return rowsAffected
 }

@@ -23,7 +23,7 @@ dotenv.config();
 
 const origin = process.env.ORIGIN || "http://127.0.0.1:5173";
 const port = process.env.PORT ? process.env.PORT : 3000;
-const allowedMethods = ["PUT", "POST", "GET"];
+const allowedMethods = ["PUT", "POST", "DELETE"];
 const app = express();
 const httpServer = createServer(app);
 
@@ -89,13 +89,14 @@ app.get("/", (request, response) => {
   response.end("welcome");
 });
 app.delete("/delete", (request, response) => {
-  request.on("data", (tablenames) => {
+  request.on("data", async (tablenames) => {
     let names: string | string[] = tablenames;
     if (tablenames.indexOf(",") !== -1) {
       names = tablenames.split(",");
       console.log(names);
     }
-    deleteTables(names);
+    const rows = await deleteTables(names);
+    return response.send(rows)
   });
 });
 app.put("/room/createroom", async (request, response) => {
