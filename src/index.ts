@@ -23,7 +23,7 @@ dotenv.config();
 
 const origin = process.env.ORIGIN || "http://127.0.0.1:5173";
 const port = process.env.PORT ? process.env.PORT : 3000;
-const allowedMethods = ["PUT", "POST", "DELETE"];
+const allowedMethods = ["PUT", "POST"];
 const app = express();
 const httpServer = createServer(app);
 
@@ -88,7 +88,7 @@ app.use((request, response, next) => {
 app.get("/", (request, response) => {
   response.end("welcome");
 });
-app.delete("/delete", (request, response) => {
+app.post("/delete", (request, response) => {
   request.on("data", async (tablenames) => {
     let names: string | string[] = tablenames;
     if (tablenames.indexOf(",") !== -1) {
