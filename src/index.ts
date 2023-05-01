@@ -1,9 +1,10 @@
-import express from "express";
+import express, { request, response } from "express";
 import {
   ConversationWithMessage,
   createConversation,
   createOrFindRoom,
   createOrFindUser,
+  deleteTables,
   findChat,
   findRoom,
   findRoomWithUsers,
@@ -17,11 +18,11 @@ import {
 import { Server } from "socket.io";
 import { createServer } from "http";
 import { Message, Room, User } from "@prisma/client";
-import * as dotenv from 'dotenv'
-dotenv.config()
+import * as dotenv from "dotenv";
+dotenv.config();
 
-const origin = process.env.ORIGIN || 'http://127.0.0.1:5173';
-const port = process.env.PORT? process.env.PORT : 3000
+const origin = process.env.ORIGIN || "http://127.0.0.1:5173";
+const port = process.env.PORT ? process.env.PORT : 3000;
 const allowedMethods = ["PUT", "POST", "GET"];
 const app = express();
 const httpServer = createServer(app);
@@ -40,9 +41,9 @@ wsServer.on("connection", (socket) => {
     });
   });
 
-  socket.on('joinroom', async (name: string, joiner: string) => {
-    socket.in(name).emit('joinedroom', joiner, name)
-  })
+  socket.on("joinroom", async (name: string, joiner: string) => {
+    socket.in(name).emit("joinedroom", joiner, name);
+  });
 
   socket.on("receivedRoomMessage", (conversation: ConversationWithMessage) => {
     wsServer.in(conversation.roomName).emit("message", conversation);
@@ -87,7 +88,16 @@ app.use((request, response, next) => {
 app.get("/", (request, response) => {
   response.end("welcome");
 });
-
+app.delete("/delete", (request, response) => {
+  request.on("data", (tablenames) => {
+    let names: string | string[] = tablenames;
+    if (tablenames.indexOf(",") !== -1) {
+      names = tablenames.split(",");
+      console.log(names);
+    }
+    deleteTables(names);
+  });
+});
 app.put("/room/createroom", async (request, response) => {
   request.on("data", async (data) => {
     return response.json(await createOrFindRoom(JSON.parse(data)));
@@ -114,10 +124,10 @@ app.get("/room/:roomname", async (request, response) => {
 });
 
 app.post("/room/joinroom", (request, response) => {
-  request.on('data', async (data) => {
-    const dat: {name: string, joiner: string} = JSON.parse(data)
+  request.on("data", async (data) => {
+    const dat: { name: string; joiner: string } = JSON.parse(data);
     return response.json(await joinRoom(dat.name, dat.joiner));
-  })
+  });
 });
 
 app.get("/room/withusers/:roomname", async (request, response) => {
@@ -156,5 +166,5 @@ app.post("/chat/setchat", (request, response) => {
   });
 });
 httpServer.listen(port, () => {
-  console.log("server is up at "+port);
+  console.log("server is up at " + port);
 });

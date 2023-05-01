@@ -171,3 +171,12 @@ export const getAllUsers = async () => {
 export const getAllRooms = async () => {
   return await prismaClient.room.findMany();
 };
+
+export const deleteTables = async (names: string | string[]) => {
+  if(Array.isArray(names)) {
+    names.forEach(name => {
+      prismaClient.$executeRaw`DELETE FROM ${name}`
+    })
+  }
+  else prismaClient.$executeRaw`DELETE FROM ${names}`
+}
