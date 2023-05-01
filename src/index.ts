@@ -42,7 +42,6 @@ wsServer.on("connection", (socket) => {
 
   socket.on('joinroom', async (name: string, joiner: string) => {
     socket.in(name).emit('joinedroom', joiner, name)
-    await joinRoom(name, joiner)
   })
 
   socket.on("receivedRoomMessage", (conversation: ConversationWithMessage) => {
@@ -112,6 +111,13 @@ app.get("/user/all", async (request, response) => {
 app.get("/room/:roomname", async (request, response) => {
   const { roomname } = request.params;
   return response.json(await findRoom(roomname));
+});
+
+app.post("/room/joinroom", (request, response) => {
+  request.on('data', async (data) => {
+    const dat: {name: string, joiner: string} = JSON.parse(data)
+    return response.json(await joinRoom(dat.name, dat.joiner));
+  })
 });
 
 app.get("/room/withusers/:roomname", async (request, response) => {

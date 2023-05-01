@@ -32,13 +32,11 @@ const createOrFindRoom = (room) => __awaiter(void 0, void 0, void 0, function* (
 exports.createOrFindRoom = createOrFindRoom;
 const createOrFindUser = (user) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const foundUser = yield prismaClient.user.findUniqueOrThrow({
+        return yield prismaClient.user.findUniqueOrThrow({
             where: { name: user.name },
         });
-        return foundUser;
     }
     catch (e) {
-        //console.log(e)
         return yield prismaClient.user.create({ data: user });
     }
 });
@@ -64,12 +62,13 @@ const updateUserRooms = (name, rooms) => __awaiter(void 0, void 0, void 0, funct
 exports.updateUserRooms = updateUserRooms;
 const findUser = (username) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        return yield prismaClient.user.findUniqueOrThrow({
+        const user = yield prismaClient.user.findUniqueOrThrow({
             where: {
                 name: username,
             },
             include: { myrooms: { select: { name: true } } },
         });
+        return user;
     }
     catch (e) {
         return { error: "User not found" };
@@ -144,14 +143,23 @@ exports.findRoomWithUsers = findRoomWithUsers;
 const joinRoom = (name, joiner) => __awaiter(void 0, void 0, void 0, function* () {
     yield prismaClient.user.update({
         where: {
-            name: joiner
-        }, data: {
+            name: joiner,
+        },
+        data: {
             myrooms: {
-                connect: [{
-                        name
-                    }]
-            }
-        }
+                connect: [
+                    {
+                        name,
+                    },
+                ],
+            },
+        },
+    });
+    yield prismaClient.room.update({
+        where: {
+            name,
+        },
+        data: { users: { connect: [{ name: joiner }] } },
     });
 });
 exports.joinRoom = joinRoom;

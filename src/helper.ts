@@ -1,10 +1,4 @@
-import {
-  Message,
-  Prisma,
-  PrismaClient,
-  Room,
-  User,
-} from "@prisma/client";
+import { Message, Prisma, PrismaClient, Room, User } from "@prisma/client";
 
 const prismaClient = new PrismaClient();
 
@@ -72,10 +66,8 @@ export const findUser = async (username: string) => {
       },
       include: { myrooms: { select: { name: true } } },
     });
-    console.log(user)
-    return user
+    return user;
   } catch (e) {
-    console.log(e)
     return { error: "User not found" };
   }
 };
@@ -110,11 +102,11 @@ export const setChat = async (chat: {
   await prismaClient.chat.upsert({
     where: { id },
     update: {
-      messages: {create: [{...message}]},
+      messages: { create: [{ ...message }] },
     },
     create: {
       messages: {
-        create: [{...message}],
+        create: [{ ...message }],
       },
       id,
     },
@@ -152,16 +144,25 @@ export const findRoomWithUsers = async (roomname: string) => {
 export const joinRoom = async (name: string, joiner: string) => {
   await prismaClient.user.update({
     where: {
-      name: joiner
-    }, data: {
+      name: joiner,
+    },
+    data: {
       myrooms: {
-        connect: [{
-          name
-        }]
-      }
-    }
-  })
-}
+        connect: [
+          {
+            name,
+          },
+        ],
+      },
+    },
+  });
+  await prismaClient.room.update({
+    where: {
+      name,
+    },
+    data: { users: { connect: [{ name: joiner }] } },
+  });
+};
 
 export const getAllUsers = async () => {
   return await prismaClient.user.findMany();

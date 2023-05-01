@@ -61,7 +61,6 @@ wsServer.on("connection", (socket) => {
     });
     socket.on('joinroom', (name, joiner) => __awaiter(void 0, void 0, void 0, function* () {
         socket.in(name).emit('joinedroom', joiner, name);
-        yield (0, helper_1.joinRoom)(name, joiner);
     }));
     socket.on("receivedRoomMessage", (conversation) => {
         wsServer.in(conversation.roomName).emit("message", conversation);
@@ -119,8 +118,15 @@ app.get("/room/:roomname", (request, response) => __awaiter(void 0, void 0, void
     const { roomname } = request.params;
     return response.json(yield (0, helper_1.findRoom)(roomname));
 }));
+app.post("/room/joinroom", (request, response) => {
+    request.on('data', (data) => __awaiter(void 0, void 0, void 0, function* () {
+        const dat = JSON.parse(data);
+        return response.json(yield (0, helper_1.joinRoom)(dat.name, dat.joiner));
+    }));
+});
 app.get("/room/withusers/:roomname", (request, response) => __awaiter(void 0, void 0, void 0, function* () {
     const { roomname } = request.params;
+    console.log(roomname);
     return response.json(yield (0, helper_1.findRoomWithUsers)(roomname));
 }));
 app.get("/user/:username", (request, response) => __awaiter(void 0, void 0, void 0, function* () {
