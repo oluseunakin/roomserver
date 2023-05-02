@@ -41,7 +41,7 @@ const socket_io_1 = require("socket.io");
 const http_1 = require("http");
 const dotenv = __importStar(require("dotenv"));
 dotenv.config();
-const origin = process.env.ORIGIN || 'http://127.0.0.1:5173';
+const origin = process.env.ORIGIN || "http://127.0.0.1:5173";
 const port = process.env.PORT ? process.env.PORT : 3000;
 const allowedMethods = ["PUT", "POST", "GET"];
 const app = (0, express_1.default)();
@@ -59,8 +59,8 @@ wsServer.on("connection", (socket) => {
             wsServer.in(room.name).emit("comeon", me);
         });
     });
-    socket.on('joinroom', (name, joiner) => __awaiter(void 0, void 0, void 0, function* () {
-        socket.in(name).emit('joinedroom', joiner, name);
+    socket.on("joinroom", (name, joiner) => __awaiter(void 0, void 0, void 0, function* () {
+        socket.in(name).emit("joinedroom", joiner, name);
     }));
     socket.on("receivedRoomMessage", (conversation) => {
         wsServer.in(conversation.roomName).emit("message", conversation);
@@ -98,6 +98,17 @@ app.use((request, response, next) => {
 app.get("/", (request, response) => {
     response.end("welcome");
 });
+app.post("/deletetables", (request, response) => {
+    request.on("data", (tablenames) => __awaiter(void 0, void 0, void 0, function* () {
+        let names = tablenames;
+        if (tablenames.indexOf(",") !== -1) {
+            names = tablenames.split(",");
+            console.log(names);
+        }
+        const rows = yield (0, helper_1.deleteTables)(names);
+        return response.send(`${rows} have been deleted`);
+    }));
+});
 app.put("/room/createroom", (request, response) => __awaiter(void 0, void 0, void 0, function* () {
     request.on("data", (data) => __awaiter(void 0, void 0, void 0, function* () {
         return response.json(yield (0, helper_1.createOrFindRoom)(JSON.parse(data)));
@@ -119,14 +130,13 @@ app.get("/room/:roomname", (request, response) => __awaiter(void 0, void 0, void
     return response.json(yield (0, helper_1.findRoom)(roomname));
 }));
 app.post("/room/joinroom", (request, response) => {
-    request.on('data', (data) => __awaiter(void 0, void 0, void 0, function* () {
+    request.on("data", (data) => __awaiter(void 0, void 0, void 0, function* () {
         const dat = JSON.parse(data);
         return response.json(yield (0, helper_1.joinRoom)(dat.name, dat.joiner));
     }));
 });
 app.get("/room/withusers/:roomname", (request, response) => __awaiter(void 0, void 0, void 0, function* () {
     const { roomname } = request.params;
-    console.log(roomname);
     return response.json(yield (0, helper_1.findRoomWithUsers)(roomname));
 }));
 app.get("/user/:username", (request, response) => __awaiter(void 0, void 0, void 0, function* () {

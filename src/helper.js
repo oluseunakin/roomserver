@@ -9,7 +9,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getAllRooms = exports.getAllUsers = exports.joinRoom = exports.findRoomWithUsers = exports.findRoom = exports.setChat = exports.findChat = exports.findUser = exports.updateUserRooms = exports.createConversation = exports.createOrFindUser = exports.createOrFindRoom = void 0;
+exports.deleteTables = exports.getAllRooms = exports.getAllUsers = exports.joinRoom = exports.findRoomWithUsers = exports.findRoom = exports.setChat = exports.findChat = exports.findUser = exports.updateUserRooms = exports.createConversation = exports.createOrFindUser = exports.createOrFindRoom = void 0;
 const client_1 = require("@prisma/client");
 const prismaClient = new client_1.PrismaClient();
 const conversationWithMessage = client_1.Prisma.validator()({
@@ -171,3 +171,15 @@ const getAllRooms = () => __awaiter(void 0, void 0, void 0, function* () {
     return yield prismaClient.room.findMany();
 });
 exports.getAllRooms = getAllRooms;
+const deleteTables = (names) => __awaiter(void 0, void 0, void 0, function* () {
+    let rowsAffected = 0;
+    if (Array.isArray(names)) {
+        names.forEach((name) => __awaiter(void 0, void 0, void 0, function* () {
+            rowsAffected += yield prismaClient.$executeRawUnsafe(`DELETE FROM "${name}"`);
+        }));
+    }
+    else
+        rowsAffected += yield prismaClient.$executeRawUnsafe(`DELETE FROM "${names}"`);
+    return rowsAffected;
+});
+exports.deleteTables = deleteTables;
