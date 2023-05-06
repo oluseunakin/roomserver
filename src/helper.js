@@ -49,11 +49,11 @@ const createOrFindUser = (user) => __awaiter(void 0, void 0, void 0, function* (
 });
 exports.createOrFindUser = createOrFindUser;
 const createConversation = (newConversation, talkerId) => __awaiter(void 0, void 0, void 0, function* () {
-    const { message, roomName } = newConversation;
+    const { message, roomId } = newConversation;
     return yield prismaClient.conversation.create({
         data: {
             message: { create: Object.assign({}, message) },
-            room: { connect: { name: roomName } },
+            room: { connect: { id: roomId } },
             talker: { connect: { id: talkerId } },
         },
     });

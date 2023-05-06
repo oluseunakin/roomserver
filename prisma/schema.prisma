@@ -55,7 +55,7 @@ model Conversation {
   messageId Int @unique
   agree Int @default(0)
   disagree Int @default(0)
-  trend Trends @relation(fields: [trendId], references: [id])
+  trend Trends? @relation(fields: [trendId], references: [id])
   trendId Int
 }
 

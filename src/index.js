@@ -64,7 +64,7 @@ wsServer.on("connection", (socket) => {
         socket.in(name).emit("joinedroom", joiner, name);
     }));
     socket.on("receivedRoomMessage", (conversation) => {
-        wsServer.in(conversation.roomName).emit("message", conversation);
+        wsServer.in(`room${conversation.roomId}`).emit("message", conversation);
     });
     socket.on("offline", (me) => {
         socket.leave(me);

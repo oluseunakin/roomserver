@@ -51,11 +51,11 @@ export const createConversation = async (
   newConversation: ConversationWithMessage,
   talkerId: number
 ) => {
-  const { message, roomName } = newConversation;
+  const { message, roomId } = newConversation;
   return await prismaClient.conversation.create({
     data: {
       message: { create: { ...message } },
-      room: { connect: { name: roomName } },
+      room: { connect: { id: roomId } },
       talker: { connect: { id: talkerId } },
     },
   });

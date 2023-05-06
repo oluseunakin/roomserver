@@ -47,7 +47,7 @@ wsServer.on("connection", (socket) => {
   });
 
   socket.on("receivedRoomMessage", (conversation: ConversationWithMessage) => {
-    wsServer.in(conversation.roomName).emit("message", conversation);
+    wsServer.in(`room${conversation.roomId}`).emit("message", conversation);
   });
 
   socket.on("offline", (me) => {
