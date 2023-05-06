@@ -108,7 +108,7 @@ app.put("/user/createuser", async (request, response) => {
   request.on("data", async (data) => {
     const user = await createOrFindUser(JSON.parse(data));
     return response
-      .cookie("userid", user.id, { sameSite: "none", secure: true })
+      .cookie("userid", user.id, { sameSite: "none", secure: true, domain: 'onrender.com' })
       .json(user);
   });
 });
@@ -185,6 +185,10 @@ app.post("/chat/setchat", (request, response) => {
     response.send({ done: "done" });
   });
 });
+
+app.post("/logout", (request, response) => {
+  response.clearCookie('userid')
+})
 
 httpServer.listen(port, () => {
   console.log("server is up at " + port);
