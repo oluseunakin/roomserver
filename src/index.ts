@@ -188,6 +188,7 @@ app.post("/chat/setchat", (request, response) => {
 
 app.post("/logout", (request, response) => {
   response.clearCookie('userid')
+  response.send('logout')
 })
 
 httpServer.listen(port, () => {
