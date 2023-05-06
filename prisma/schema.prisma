@@ -28,15 +28,18 @@ model Notification {
 }
 
 model Room {
-  name String @unique @id
+  id Int @id @default(autoincrement())
+  name String @unique
   users User[]
   usercount Int @default(0)
   conversations Conversation[] 
-  trends Trends[]
+  trends Trends[] @relation(fields: [trendsId], references: [id])
+  trendsId Int
 }
 
 model Trends {
-  hashtag String @id
+  id Int @id @default(autoincrement())
+  hashtag String @unique
   conversations Conversation []
 }
 
@@ -50,6 +53,8 @@ model Conversation {
   messageId Int @unique
   agree Int @default(0)
   disagree Int @default(0)
+  trend Trends @relation(fields: [trendId], references: [id])
+  trendId Int
 }
 
 model Chat {
