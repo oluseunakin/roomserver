@@ -36,7 +36,7 @@ model Room {
 }
 
 model Trends {
-  hashtag String @ids
+  hashtag String @id
   conversations Conversation []
 }
 
