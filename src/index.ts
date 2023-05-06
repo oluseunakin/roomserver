@@ -21,6 +21,7 @@ import { Message, Room, User } from "@prisma/client";
 import * as dotenv from "dotenv";
 dotenv.config();
 
+const cookieParser = require("cookie-parser");
 const origin = process.env.ORIGIN || "http://127.0.0.1:5173";
 const port = process.env.PORT ? process.env.PORT : 3000;
 const allowedMethods = ["PUT", "POST", "GET"];
@@ -47,7 +48,6 @@ wsServer.on("connection", (socket) => {
 
   socket.on("receivedRoomMessage", (conversation: ConversationWithMessage) => {
     wsServer.in(conversation.roomName).emit("message", conversation);
-    createConversation(conversation);
   });
 
   socket.on("offline", (me) => {
@@ -66,22 +66,20 @@ wsServer.on("connection", (socket) => {
     socket.emit("status", stat);
   });
 
-  socket.on("chat", async (partner: string, message: Message) => {
-    wsServer.in(partner).emit("receiveChat", message);
-    setChat({
-      senderName: message.sender,
-      receiverName: partner,
-      message,
-    });
+  socket.on("chat", async (partner: User, message: Message) => {
+    wsServer.in(partner.name).emit("receiveChat", partner, message);
   });
 });
+app.use(cookieParser());
 
 app.use((request, response, next) => {
   request.setEncoding("utf8");
   response
-    .setHeader("access-control-allow-origin", origin)
-    .setHeader("access-control-allow-methods", allowedMethods)
-    .setHeader("Access-Control-Allow-Headers", "content-type");
+    .setHeader("Access-Control-Allow-Origin", origin)
+    .setHeader("Access-Control-Allow-Methods", allowedMethods)
+    .setHeader("Access-Control-Allow-Headers", "content-type")
+    .setHeader("Access-Control-Allow-Credentials", "true");
+
   next();
 });
 
@@ -94,10 +92,9 @@ app.post("/deletetables", (request, response) => {
     let names: string | string[] = tablenames;
     if (tablenames.indexOf(",") !== -1) {
       names = tablenames.split(",");
-      console.log(names);
     }
     const rows = await deleteTables(names);
-    return response.send(`${rows} have been deleted`)
+    return response.send(`${rows} have been deleted`);
   });
 });
 
@@ -109,12 +106,20 @@ app.put("/room/createroom", async (request, response) => {
 
 app.put("/user/createuser", async (request, response) => {
   request.on("data", async (data) => {
-    return response.json(await createOrFindUser(JSON.parse(data)));
+    const user = await createOrFindUser(JSON.parse(data));
+    return response
+      .cookie("userid", user.id, { sameSite: "none", secure: true })
+      .json(user);
   });
 });
 
-app.get("/room/all", async (request, response) => {
-  return response.json(await getAllRooms());
+app.get("/room/all/:pageno", async (request, response) => {
+  return response.json(
+    await getAllRooms(
+      Number(request.params.pageno),
+      Number(request.cookies.userid)
+    )
+  );
 });
 
 app.get("/user/all", async (request, response) => {
@@ -127,10 +132,15 @@ app.get("/room/:roomname", async (request, response) => {
 });
 
 app.post("/room/joinroom", (request, response) => {
-  request.on("data", async (data) => {
-    const dat: { name: string; joiner: string } = JSON.parse(data);
-    return response.json(await joinRoom(dat.name, dat.joiner));
+  request.on("data", async (roomname) => {
+    return response.json(
+      await joinRoom(roomname, Number(request.cookies.userid))
+    );
   });
+});
+
+app.put("/trends/create", (request, response) => {
+  request.on("data", (data) => {});
 });
 
 app.get("/room/withusers/:roomname", async (request, response) => {
@@ -138,36 +148,44 @@ app.get("/room/withusers/:roomname", async (request, response) => {
   return response.json(await findRoomWithUsers(roomname));
 });
 
-app.get("/user/:username", async (request, response) => {
-  const { username } = request.params;
-  return response.json(await findUser(username));
+app.get("/user/getuser", async (request, response) => {
+  const userid = request.cookies.userid;
+  return response.json(await findUser(Number(userid)));
 });
 
-app.get("/chat/:sender/:receiver", async (request, response) => {
-  const { sender, receiver } = request.params;
-  return response.json(await findChat(sender, receiver));
+app.get("/chat/:receiver", async (request, response) => {
+  const { receiver } = request.params;
+  return response.json(
+    await findChat(Number(request.cookies.userid), Number(receiver))
+  );
 });
 
-app.post("/user/update/:username", (request, response) => {
-  const { username } = request.params;
+app.post("/user/updateuser", (request, response) => {
   request.on("data", async (data) => {
-    const updated = await updateUserRooms(username, JSON.parse(data));
+    const updated = await updateUserRooms(
+      Number(request.cookies.userid),
+      JSON.parse(data)
+    );
     return response.json(updated);
   });
 });
 
 app.put("/conversation/create", (request, response) => {
   request.on("data", async (data) => {
-    response.json(await createConversation(JSON.parse(data)));
+    response.json(
+      await createConversation(JSON.parse(data), Number(request.cookies.userid))
+    );
   });
 });
 
 app.post("/chat/setchat", (request, response) => {
-  request.on("data", (data) => {
-    setChat(JSON.parse(data));
-    response.send("done");
+  request.on("data", async (data) => {
+    const { receiverId, message } = JSON.parse(data);
+    await setChat(Number(request.cookies.userid), receiverId, message);
+    response.send({ done: "done" });
   });
 });
+
 httpServer.listen(port, () => {
   console.log("server is up at " + port);
 });

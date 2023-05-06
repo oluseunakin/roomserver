@@ -1,4 +1,5 @@
 import { Message, Prisma, PrismaClient, Room, User } from "@prisma/client";
+import { response } from "express";
 
 const prismaClient = new PrismaClient();
 
@@ -18,53 +19,65 @@ type ChatWithMessages = Prisma.ChatGetPayload<typeof chatWithMessages>;
 
 export const createOrFindRoom = async (room: Room) => {
   try {
-    const foundRoom = await prismaClient.room.findUniqueOrThrow({
+    return await prismaClient.room.findUniqueOrThrow({
       where: { name: room.name },
     });
-    return foundRoom;
   } catch (e) {
     return await prismaClient.room.create({ data: room });
   }
 };
 
+import crypto from "crypto";
+
 export const createOrFindUser = async (user: User) => {
+  const id = computeId(user.name, user.password);
+  let foundOrCreated;
+  user.id = id;
   try {
-    return await prismaClient.user.findUniqueOrThrow({
-      where: { name: user.name },
+    foundOrCreated = await prismaClient.user.findUniqueOrThrow({
+      where: { id },
+      select: { name: true, id: true },
     });
   } catch (e) {
-    return await prismaClient.user.create({ data: user });
+    foundOrCreated = await prismaClient.user.create({
+      data: user,
+      select: { name: true, id: true },
+    });
   }
+  return foundOrCreated;
 };
 
 export const createConversation = async (
-  newConversation: ConversationWithMessage
+  newConversation: ConversationWithMessage,
+  talkerId: number
 ) => {
-  const { message, talkerName, roomName } = newConversation;
+  const { message, roomName } = newConversation;
   return await prismaClient.conversation.create({
     data: {
       message: { create: { ...message } },
       room: { connect: { name: roomName } },
-      talker: { connect: { name: talkerName } },
+      talker: { connect: { id: talkerId } },
     },
   });
 };
 
-export const updateUserRooms = async (name: string, rooms: Room[]) => {
+export const updateUserRooms = async (id: number, rooms: Room[]) => {
   await prismaClient.user.update({
     data: { myrooms: { connect: [...rooms] } },
-    where: { name },
+    where: { id },
   });
   return "done";
 };
 
-export const findUser = async (username: string) => {
+export const findUser = async (id: number) => {
   try {
     const user = await prismaClient.user.findUniqueOrThrow({
-      where: {
-        name: username,
+      where: { id },
+      select: {
+        name: true,
+        id: true,
+        myrooms: { select: { name: true } },
       },
-      include: { myrooms: { select: { name: true } } },
     });
     return user;
   } catch (e) {
@@ -75,6 +88,9 @@ export const findUser = async (username: string) => {
 const computeId = (name1: string, name2: string) => {
   let key1 = 0,
     key2 = 0;
+  //const hash1 = crypto.createHash('md5').update(name1).digest('hex')
+  //const hash2 = crypto.createHash('md5').update(name2).digest('hex')
+
   for (let i = 0; i < name1.length; i++) {
     key1 += name1.charCodeAt(i);
   }
@@ -84,21 +100,20 @@ const computeId = (name1: string, name2: string) => {
   return key1 + key2;
 };
 
-export const findChat = async (sender: string, receiver: string) => {
-  const id = computeId(sender, receiver);
+export const findChat = async (sender: number, receiver: number) => {
+  const id = sender + receiver;
   return await prismaClient.chat.findUnique({
     where: { id },
     include: { messages: true },
   });
 };
 
-export const setChat = async (chat: {
-  message: Message;
-  senderName: string;
-  receiverName: string;
-}) => {
-  const { message, senderName, receiverName } = chat;
-  const id = computeId(senderName, receiverName);
+export const setChat = async (
+  senderId: number,
+  receiverId: number,
+  message: Message
+) => {
+  const id = senderId + receiverId;
   await prismaClient.chat.upsert({
     where: { id },
     update: {
@@ -132,7 +147,11 @@ export const findRoomWithUsers = async (roomname: string) => {
         name: roomname,
       },
       include: {
-        users: true,
+        users: {
+          select: {
+            name: true, id: true
+          }
+        },
         conversations: { include: { message: true } },
       },
     });
@@ -141,11 +160,9 @@ export const findRoomWithUsers = async (roomname: string) => {
   }
 };
 
-export const joinRoom = async (name: string, joiner: string) => {
+export const joinRoom = async (name: string, id: number) => {
   await prismaClient.user.update({
-    where: {
-      name: joiner,
-    },
+    where: { id },
     data: {
       myrooms: {
         connect: [
@@ -160,7 +177,12 @@ export const joinRoom = async (name: string, joiner: string) => {
     where: {
       name,
     },
-    data: { users: { connect: [{ name: joiner }] } },
+    data: {
+      users: { connect: [{ id }] },
+      usercount: {
+        increment: 1,
+      },
+    },
   });
 };
 
@@ -168,17 +190,65 @@ export const getAllUsers = async () => {
   return await prismaClient.user.findMany();
 };
 
-export const getAllRooms = async () => {
-  return await prismaClient.room.findMany();
+export const getAllRooms = async (pageno: number, userid: number) => {
+  const take = 2;
+  const skip = take * pageno;
+  const allrooms = await prismaClient.room.count();
+  if (skip >= allrooms) return { status: "end of data" };
+  else {
+    const toprooms = await prismaClient.room.findMany({
+      orderBy: {
+        usercount: "desc",
+      },
+      take: take,
+      skip: skip,
+      where: {
+        NOT: {
+          users: {
+            some: {
+              id: userid,
+            },
+          },
+        },
+      },
+    });
+    const others = await prismaClient.room.findMany({
+      take: take,
+      skip: skip,
+      orderBy: { usercount: "asc" },
+      where: {
+        NOT: {
+          users: {
+            some: {
+              name: "Oluseun",
+            },
+          },
+        },
+      },
+    });
+    return { toprooms, others };
+  }
 };
 
 export const deleteTables = async (names: string | string[]) => {
-  let rowsAffected = 0
-  if(Array.isArray(names)) {
+  let rowsAffected = 0;
+  if (Array.isArray(names)) {
     names.forEach(async (name) => {
-      rowsAffected += await prismaClient.$executeRawUnsafe(`DELETE FROM "${name}"`)
-    })
+      rowsAffected += await prismaClient.$executeRawUnsafe(
+        `DELETE FROM "${name}"`
+      );
+    });
+  } else
+    rowsAffected += await prismaClient.$executeRawUnsafe(
+      `DELETE FROM "${names}"`
+    );
+  return rowsAffected;
+};
+
+// Exclude keys from user
+function exclude<T, Key extends keyof T>(object: T, keys: Key[]): Omit<T, Key> {
+  for (let key of keys) {
+    delete object[key];
   }
-  else rowsAffected += await prismaClient.$executeRawUnsafe(`DELETE FROM "${names}"`)
-  return rowsAffected
+  return object;
 }

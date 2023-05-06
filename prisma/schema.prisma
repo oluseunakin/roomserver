@@ -11,25 +11,45 @@ datasource db {
 }
 
 model User {
-  name String @unique @id
+  id Int @id
+  name String 
+  password String
   myrooms Room[] 
   conversations Conversation[] 
+  notifications Notification[]
+}
+
+model Notification {
+  id Int @id @default(autoincrement())
+  text String
+  createdAt String
+  user User @relation(fields: [userId], references: [id])
+  userId Int
 }
 
 model Room {
   name String @unique @id
   users User[]
+  usercount Int @default(0)
   conversations Conversation[] 
+  trends Trends[]
+}
+
+model Trends {
+  hashtag String @ids
+  conversations Conversation []
 }
 
 model Conversation {
   id Int @id @default(autoincrement())
-  talker User @relation(fields: [talkerName], references: [name], onDelete: Cascade)
-  talkerName String 
+  talker User @relation(fields: [talkerId], references: [id], onDelete: Cascade)
+  talkerId Int 
   room Room @relation(fields: [roomName], references: [name], onDelete: Cascade)
   roomName String
   message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
   messageId Int @unique
+  agree Int @default(0)
+  disagree Int @default(0)
 }
 
 model Chat {

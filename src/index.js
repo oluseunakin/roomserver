@@ -41,6 +41,7 @@ const socket_io_1 = require("socket.io");
 const http_1 = require("http");
 const dotenv = __importStar(require("dotenv"));
 dotenv.config();
+const cookieParser = require("cookie-parser");
 const origin = process.env.ORIGIN || "http://127.0.0.1:5173";
 const port = process.env.PORT ? process.env.PORT : 3000;
 const allowedMethods = ["PUT", "POST", "GET"];
@@ -64,7 +65,6 @@ wsServer.on("connection", (socket) => {
     }));
     socket.on("receivedRoomMessage", (conversation) => {
         wsServer.in(conversation.roomName).emit("message", conversation);
-        (0, helper_1.createConversation)(conversation);
     });
     socket.on("offline", (me) => {
         socket.leave(me);
@@ -79,20 +79,17 @@ wsServer.on("connection", (socket) => {
         socket.emit("status", stat);
     }));
     socket.on("chat", (partner, message) => __awaiter(void 0, void 0, void 0, function* () {
-        wsServer.in(partner).emit("receiveChat", message);
-        (0, helper_1.setChat)({
-            senderName: message.sender,
-            receiverName: partner,
-            message,
-        });
+        wsServer.in(partner.name).emit("receiveChat", partner, message);
     }));
 });
+app.use(cookieParser());
 app.use((request, response, next) => {
     request.setEncoding("utf8");
     response
-        .setHeader("access-control-allow-origin", origin)
-        .setHeader("access-control-allow-methods", allowedMethods)
-        .setHeader("Access-Control-Allow-Headers", "content-type");
+        .setHeader("Access-Control-Allow-Origin", origin)
+        .setHeader("Access-Control-Allow-Methods", allowedMethods)
+        .setHeader("Access-Control-Allow-Headers", "content-type")
+        .setHeader("Access-Control-Allow-Credentials", "true");
     next();
 });
 app.get("/", (request, response) => {
@@ -103,7 +100,6 @@ app.post("/deletetables", (request, response) => {
         let names = tablenames;
         if (tablenames.indexOf(",") !== -1) {
             names = tablenames.split(",");
-            console.log(names);
         }
         const rows = yield (0, helper_1.deleteTables)(names);
         return response.send(`${rows} have been deleted`);
@@ -116,11 +112,14 @@ app.put("/room/createroom", (request, response) => __awaiter(void 0, void 0, voi
 }));
 app.put("/user/createuser", (request, response) => __awaiter(void 0, void 0, void 0, function* () {
     request.on("data", (data) => __awaiter(void 0, void 0, void 0, function* () {
-        return response.json(yield (0, helper_1.createOrFindUser)(JSON.parse(data)));
+        const user = yield (0, helper_1.createOrFindUser)(JSON.parse(data));
+        return response
+            .cookie("userid", user.id, { sameSite: "none", secure: true })
+            .json(user);
     }));
 }));
-app.get("/room/all", (request, response) => __awaiter(void 0, void 0, void 0, function* () {
-    return response.json(yield (0, helper_1.getAllRooms)());
+app.get("/room/all/:pageno", (request, response) => __awaiter(void 0, void 0, void 0, function* () {
+    return response.json(yield (0, helper_1.getAllRooms)(Number(request.params.pageno), Number(request.cookies.userid)));
 }));
 app.get("/user/all", (request, response) => __awaiter(void 0, void 0, void 0, function* () {
     return response.json(yield (0, helper_1.getAllUsers)());
@@ -130,40 +129,42 @@ app.get("/room/:roomname", (request, response) => __awaiter(void 0, void 0, void
     return response.json(yield (0, helper_1.findRoom)(roomname));
 }));
 app.post("/room/joinroom", (request, response) => {
-    request.on("data", (data) => __awaiter(void 0, void 0, void 0, function* () {
-        const dat = JSON.parse(data);
-        return response.json(yield (0, helper_1.joinRoom)(dat.name, dat.joiner));
+    request.on("data", (roomname) => __awaiter(void 0, void 0, void 0, function* () {
+        return response.json(yield (0, helper_1.joinRoom)(roomname, Number(request.cookies.userid)));
     }));
+});
+app.put("/trends/create", (request, response) => {
+    request.on("data", (data) => { });
 });
 app.get("/room/withusers/:roomname", (request, response) => __awaiter(void 0, void 0, void 0, function* () {
     const { roomname } = request.params;
     return response.json(yield (0, helper_1.findRoomWithUsers)(roomname));
 }));
-app.get("/user/:username", (request, response) => __awaiter(void 0, void 0, void 0, function* () {
-    const { username } = request.params;
-    return response.json(yield (0, helper_1.findUser)(username));
+app.get("/user/getuser", (request, response) => __awaiter(void 0, void 0, void 0, function* () {
+    const userid = request.cookies.userid;
+    return response.json(yield (0, helper_1.findUser)(Number(userid)));
 }));
-app.get("/chat/:sender/:receiver", (request, response) => __awaiter(void 0, void 0, void 0, function* () {
-    const { sender, receiver } = request.params;
-    return response.json(yield (0, helper_1.findChat)(sender, receiver));
+app.get("/chat/:receiver", (request, response) => __awaiter(void 0, void 0, void 0, function* () {
+    const { receiver } = request.params;
+    return response.json(yield (0, helper_1.findChat)(Number(request.cookies.userid), Number(receiver)));
 }));
-app.post("/user/update/:username", (request, response) => {
-    const { username } = request.params;
+app.post("/user/updateuser", (request, response) => {
     request.on("data", (data) => __awaiter(void 0, void 0, void 0, function* () {
-        const updated = yield (0, helper_1.updateUserRooms)(username, JSON.parse(data));
+        const updated = yield (0, helper_1.updateUserRooms)(Number(request.cookies.userid), JSON.parse(data));
         return response.json(updated);
     }));
 });
 app.put("/conversation/create", (request, response) => {
     request.on("data", (data) => __awaiter(void 0, void 0, void 0, function* () {
-        response.json(yield (0, helper_1.createConversation)(JSON.parse(data)));
+        response.json(yield (0, helper_1.createConversation)(JSON.parse(data), Number(request.cookies.userid)));
     }));
 });
 app.post("/chat/setchat", (request, response) => {
-    request.on("data", (data) => {
-        (0, helper_1.setChat)(JSON.parse(data));
-        response.send("done");
-    });
+    request.on("data", (data) => __awaiter(void 0, void 0, void 0, function* () {
+        const { receiverId, message } = JSON.parse(data);
+        yield (0, helper_1.setChat)(Number(request.cookies.userid), receiverId, message);
+        response.send({ done: "done" });
+    }));
 });
 httpServer.listen(port, () => {
     console.log("server is up at " + port);
