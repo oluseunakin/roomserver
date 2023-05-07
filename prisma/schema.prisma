@@ -34,14 +34,13 @@ model Room {
   usercount Int @default(0)
   conversations Conversation[] 
   trends Trends[] 
-  trendsId Int
 }
 
 model Trends {
   id Int @id @default(autoincrement())
   hashtag String @unique
   conversations Conversation []
-  room Room @relation(fields: [roomId], references: [id])
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
   roomId Int
 }
 
@@ -51,12 +50,12 @@ model Conversation {
   talkerId Int 
   room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
   roomId Int
-  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade) 
   messageId Int @unique
   agree Int @default(0)
   disagree Int @default(0)
   trend Trends? @relation(fields: [trendId], references: [id])
-  trendId Int
+  trendId Int?
 }
 
 model Chat {
@@ -72,7 +71,7 @@ model Message {
   sender String
   chat Chat? @relation(fields: [chatId], references: [id], onDelete: Cascade)
   chatId Int?
-  conversation Conversation?
+  conversation Conversation? 
 }
 
 model Media {
