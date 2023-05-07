@@ -108,7 +108,7 @@ app.put("/user/createuser", async (request, response) => {
   request.on("data", async (data) => {
     const user = await createOrFindUser(JSON.parse(data));
     return response
-      .cookie("userid", user.id, { sameSite: "none", secure: true, domain: 'https://roomserver2.onrender.com' })
+      .cookie("userid", user.id, { sameSite: "none", secure: true, domain: '.onrender.com' })
       .json(user);
   });
 });
