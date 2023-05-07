@@ -114,7 +114,7 @@ app.put("/user/createuser", (request, response) => __awaiter(void 0, void 0, voi
     request.on("data", (data) => __awaiter(void 0, void 0, void 0, function* () {
         const user = yield (0, helper_1.createOrFindUser)(JSON.parse(data));
         return response
-            .cookie("userid", user.id, { sameSite: "none", domain: 'onrender.com', httpOnly: true, secure: true })
+            .cookie("userid", user.id, { sameSite: "none", httpOnly: true, secure: true })
             .json(user);
     }));
 }));
