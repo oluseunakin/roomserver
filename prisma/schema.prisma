@@ -17,6 +17,7 @@ model User {
   myrooms Room[] 
   conversations Conversation[] 
   notifications Notification[]
+  messages Message[]
 }
 
 model Notification {
@@ -48,14 +49,18 @@ model Conversation {
   id Int @id @default(autoincrement())
   talker User @relation(fields: [talkerId], references: [id], onDelete: Cascade)
   talkerId Int 
-  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  roomId Int
+  room Room? @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId Int?
   message Message @relation(fields: [messageId], references: [id], onDelete: Cascade) 
   messageId Int @unique
-  agree Int @default(0)
-  disagree Int @default(0)
+  agree Int[]
+  disagree Int[]
   trend Trends? @relation(fields: [trendId], references: [id])
   trendId Int?
+  comments Conversation[] @relation("comments")
+  commentsCount Int @default(0)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade, "comments")
+  conversationId Int?
 }
 
 model Chat {
@@ -68,7 +73,8 @@ model Message {
   createdAt String
   text String
   media Media[] 
-  sender String
+  sender User @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  senderId Int
   chat Chat? @relation(fields: [chatId], references: [id], onDelete: Cascade)
   chatId Int?
   conversation Conversation? 

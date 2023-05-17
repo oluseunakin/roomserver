@@ -9,15 +9,17 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteTables = exports.getAllRooms = exports.getAllUsers = exports.joinRoom = exports.findRoomWithUsers = exports.findRoom = exports.setChat = exports.findChat = exports.findUser = exports.updateUserRooms = exports.createConversation = exports.createOrFindUser = exports.createOrFindRoom = void 0;
+exports.deleteTables = exports.getAllRooms = exports.getAllUsers = exports.joinRoom = exports.findRoomWithUsers = exports.findRoom = exports.setChat = exports.findChat = exports.findUser = exports.updateUserRooms = exports.comment = exports.getComments = exports.disagree = exports.agree = exports.createConversation = exports.createOrFindUser = exports.createOrFindRoom = void 0;
 const client_1 = require("@prisma/client");
 const prismaClient = new client_1.PrismaClient();
 const conversationWithMessage = client_1.Prisma.validator()({
     include: { message: true },
 });
-const chatWithMessages = client_1.Prisma.validator()({
-    include: { messages: true },
+/* const chatWithMessages = Prisma.validator<Prisma.ChatArgs>()({
+  include: { messages: true },
 });
+
+type ChatWithMessages = Prisma.ChatGetPayload<typeof chatWithMessages>; */
 const createOrFindRoom = (room) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         return yield prismaClient.room.findUniqueOrThrow({
@@ -49,16 +51,109 @@ const createOrFindUser = (user) => __awaiter(void 0, void 0, void 0, function* (
 });
 exports.createOrFindUser = createOrFindUser;
 const createConversation = (newConversation, talkerId) => __awaiter(void 0, void 0, void 0, function* () {
-    const { message, roomId } = newConversation;
-    return yield prismaClient.conversation.create({
+    const { message, room } = newConversation;
+    const createdConversation = prismaClient.conversation.create({
         data: {
-            message: { create: Object.assign({}, message) },
-            room: { connect: { id: roomId } },
+            message: {
+                create: {
+                    text: message.text,
+                    createdAt: message.createdAt,
+                    sender: {
+                        connect: {
+                            id: message.senderId,
+                        },
+                    },
+                },
+            },
             talker: { connect: { id: talkerId } },
+            room: { connect: { id: room.id } },
+        },
+        include: {
+            message: true,
+            talker: { select: { name: true, id: true } },
+            room: { select: { name: true, id: true } },
+        },
+    });
+    prismaClient.room.update({
+        where: { id: room.id },
+        data: {
+            conversations: {
+                connect: [{ id: (yield createdConversation).id }],
+            },
+        },
+    });
+    return createdConversation;
+});
+exports.createConversation = createConversation;
+const agree = (id, newValue) => __awaiter(void 0, void 0, void 0, function* () {
+    return yield prismaClient.conversation.update({
+        where: { id },
+        data: { agree: newValue },
+        select: { agree: true },
+    });
+});
+exports.agree = agree;
+const disagree = (id, newValue) => __awaiter(void 0, void 0, void 0, function* () {
+    return yield prismaClient.conversation.update({
+        where: { id },
+        data: { disagree: newValue },
+        select: { disagree: true },
+    });
+});
+exports.disagree = disagree;
+const getComments = (id) => __awaiter(void 0, void 0, void 0, function* () {
+    return yield prismaClient.conversation.findUnique({
+        where: { id },
+        select: {
+            comments: {
+                include: {
+                    message: true,
+                    talker: { select: { name: true, id: true } }
+                },
+            },
         },
     });
 });
-exports.createConversation = createConversation;
+exports.getComments = getComments;
+const comment = (conversationId, userId, comment) => __awaiter(void 0, void 0, void 0, function* () {
+    const { message } = comment;
+    const createdComment = prismaClient.conversation.create({
+        data: {
+            message: {
+                create: {
+                    text: message.text,
+                    createdAt: message.createdAt,
+                    sender: {
+                        connect: {
+                            id: message.senderId,
+                        },
+                    },
+                },
+            },
+            talker: { connect: { id: userId } },
+            conversation: { connect: { id: conversationId } },
+        },
+        include: { message: true, talker: { select: { id: true, name: true } } },
+    });
+    const up = yield prismaClient.conversation.update({
+        where: { id: conversationId },
+        include: { message: true },
+        data: {
+            comments: {
+                connect: [
+                    {
+                        id: (yield createdComment).id,
+                    },
+                ],
+            },
+            commentsCount: {
+                increment: 1
+            },
+        },
+    });
+    return createdComment;
+});
+exports.comment = comment;
 const updateUserRooms = (id, rooms) => __awaiter(void 0, void 0, void 0, function* () {
     yield prismaClient.user.update({
         data: { myrooms: { connect: [...rooms] } },
@@ -74,7 +169,7 @@ const findUser = (id) => __awaiter(void 0, void 0, void 0, function* () {
             select: {
                 name: true,
                 id: true,
-                myrooms: { select: { name: true } },
+                myrooms: { select: { name: true, id: true } },
             },
         });
         return user;
@@ -109,23 +204,35 @@ const setChat = (senderId, receiverId, message) => __awaiter(void 0, void 0, voi
     yield prismaClient.chat.upsert({
         where: { id },
         update: {
-            messages: { create: [Object.assign({}, message)] },
+            messages: {
+                create: [
+                    {
+                        text: message.text,
+                        createdAt: message.createdAt,
+                        sender: { connect: { id: senderId } },
+                    },
+                ],
+            },
         },
         create: {
             messages: {
-                create: [Object.assign({}, message)],
+                create: [
+                    {
+                        text: message.text,
+                        createdAt: message.createdAt,
+                        sender: { connect: { id: senderId } },
+                    },
+                ],
             },
             id,
         },
     });
 });
 exports.setChat = setChat;
-const findRoom = (roomname) => __awaiter(void 0, void 0, void 0, function* () {
+const findRoom = (id) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         return yield prismaClient.room.findUniqueOrThrow({
-            where: {
-                name: roomname,
-            },
+            where: { id },
         });
     }
     catch (e) {
@@ -133,19 +240,30 @@ const findRoom = (roomname) => __awaiter(void 0, void 0, void 0, function* () {
     }
 });
 exports.findRoom = findRoom;
-const findRoomWithUsers = (roomname) => __awaiter(void 0, void 0, void 0, function* () {
+const findRoomWithUsers = (id) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         return yield prismaClient.room.findUniqueOrThrow({
-            where: {
-                name: roomname,
-            },
+            where: { id },
             include: {
                 users: {
                     select: {
-                        name: true, id: true
-                    }
+                        name: true,
+                        id: true,
+                    },
                 },
-                conversations: { include: { message: true } },
+                conversations: {
+                    include: {
+                        message: true,
+                        talker: {
+                            select: { id: true, name: true },
+                        },
+                        room: {
+                            select: { id: true, name: true },
+                        },
+                        comments: {}
+                    },
+                    orderBy: { id: "desc" },
+                },
             },
         });
     }
@@ -167,7 +285,7 @@ const joinRoom = (name, id) => __awaiter(void 0, void 0, void 0, function* () {
             },
         },
     });
-    yield prismaClient.room.update({
+    return yield prismaClient.room.update({
         where: {
             name,
         },

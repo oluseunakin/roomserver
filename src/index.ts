@@ -1,16 +1,19 @@
-import express, { request, response } from "express";
+import express from "express";
 import {
-  ConversationWithMessage,
+  agree,
+  comment,
   createConversation,
   createOrFindRoom,
   createOrFindUser,
   deleteTables,
+  disagree,
   findChat,
   findRoom,
   findRoomWithUsers,
   findUser,
   getAllRooms,
   getAllUsers,
+  getComments,
   joinRoom,
   setChat,
   updateUserRooms,
@@ -37,37 +40,35 @@ wsServer.on("connection", (socket) => {
     rooms = myrooms;
     socket.join(me);
     myrooms.forEach((room) => {
-      socket.join(room.name);
-      wsServer.in(room.name).emit("comeon", me);
+      socket.join(`room${room.id}`);
+      wsServer.in(`room${room.id}`).emit("comeon", me);
     });
-  });
-
-  socket.on("joinroom", async (name: string, joiner: string) => {
-    socket.in(name).emit("joinedroom", joiner, name);
-  });
-
-  socket.on("receivedRoomMessage", (conversation: ConversationWithMessage) => {
-    wsServer.in(`room${conversation.roomId}`).emit("message", conversation);
-  });
-
-  socket.on("offline", (me) => {
+  }).on("joinroom", async (room: Room, joiner: string) => {
+    socket.join(`room${room.id}`);
+    socket.in(`room${room.id}`).emit("joinedroom", joiner, room.name);
+  }).on("receivedRoomMessage", (conversation) => {
+    wsServer.in(`room${conversation.room.id}`).emit("message", conversation);
+  }).on("commented", (comment, roomid) => {
+    wsServer.in(`room${roomid}`).emit("comment", comment);
+  }).on("agreed", (roomid, id, userid, data) => {
+    wsServer.in(`room${roomid}`).emit("agree", id, userid, data);
+  }).on("disagreed", (roomid, id, userid, data) => {
+    wsServer.in(`room${roomid}`).emit("disagree", id, userid, data);
+  })
+  .on("offline", (me) => {
     socket.leave(me);
     rooms.forEach((room) => {
-      socket.leave(room.name);
-      wsServer.in(room.name).emit("goneoff", me);
+      socket.leave(`room${room.id}`);
+      wsServer.in(`room${room.id}`).emit("goneoff", me);
     });
-  });
-
-  socket.on("isonline", async (users: User[]) => {
+  }).on("isonline", async (users: User[]) => {
     let status = users.map(async (user, i) =>
       (await wsServer.in(user.name).fetchSockets()).length > 0 ? true : false
     );
     const stat = await Promise.all(status);
     socket.emit("status", stat);
-  });
-
-  socket.on("chat", async (partner: User, message: Message) => {
-    wsServer.in(partner.name).emit("receiveChat", partner, message);
+  }).on("chat", async (receiver: User, message: Message) => {
+    wsServer.in(receiver.name).emit("receiveChat", message);
   });
 });
 app.use(cookieParser());
@@ -126,9 +127,9 @@ app.get("/user/all", async (request, response) => {
   return response.json(await getAllUsers());
 });
 
-app.get("/room/:roomname", async (request, response) => {
-  const { roomname } = request.params;
-  return response.json(await findRoom(roomname));
+app.get("/room/:roomid", async (request, response) => {
+  const { roomid } = request.params;
+  return response.json(await findRoom(Number(roomid)));
 });
 
 app.post("/room/joinroom", (request, response) => {
@@ -143,9 +144,9 @@ app.put("/trends/create", (request, response) => {
   request.on("data", (data) => {});
 });
 
-app.get("/room/withusers/:roomname", async (request, response) => {
-  const { roomname } = request.params;
-  return response.json(await findRoomWithUsers(roomname));
+app.get("/room/withusers/:id", async (request, response) => {
+  const { id } = request.params;
+  return response.json(await findRoomWithUsers(Number(id)));
 });
 
 app.get("/user/getuser", async (request, response) => {
@@ -177,6 +178,30 @@ app.put("/conversation/create", (request, response) => {
     );
   });
 });
+
+app.post("/conversation/:id/agree", (request, response) => {
+  request.on("data", async (data) => {
+    return response.json(await agree(Number(request.params.id), JSON.parse(data)))
+  })
+  
+})
+
+app.post("/conversation/:id/disagree", async (request, response) => {
+  request.on("data", async (data) => {
+    return response.json(await disagree(Number(request.params.id), JSON.parse(data)))
+  })
+})
+
+app.post("/conversation/:id/comment", (request, response) => {
+  const userId = Number(request.cookies.userid)
+  request.on('data', async (data) => { 
+    return response.json(await comment(Number(request.params.id), userId, JSON.parse(data)))
+  })
+})
+
+app.get("/conversation/:id/getcomments", async (request, response) => {
+  return response.json(await getComments(Number(request.params.id)))
+})
 
 app.post("/chat/setchat", (request, response) => {
   request.on("data", async (data) => {

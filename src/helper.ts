@@ -1,5 +1,4 @@
 import { Message, Prisma, PrismaClient, Room, User } from "@prisma/client";
-import { response } from "express";
 
 const prismaClient = new PrismaClient();
 
@@ -11,11 +10,11 @@ export type ConversationWithMessage = Prisma.ConversationGetPayload<
   typeof conversationWithMessage
 >;
 
-const chatWithMessages = Prisma.validator<Prisma.ChatArgs>()({
+/* const chatWithMessages = Prisma.validator<Prisma.ChatArgs>()({
   include: { messages: true },
 });
 
-type ChatWithMessages = Prisma.ChatGetPayload<typeof chatWithMessages>;
+type ChatWithMessages = Prisma.ChatGetPayload<typeof chatWithMessages>; */
 
 export const createOrFindRoom = async (room: Room) => {
   try {
@@ -26,8 +25,6 @@ export const createOrFindRoom = async (room: Room) => {
     return await prismaClient.room.create({ data: room });
   }
 };
-
-import crypto from "crypto";
 
 export const createOrFindUser = async (user: User) => {
   const id = computeId(user.name, user.password);
@@ -48,17 +45,114 @@ export const createOrFindUser = async (user: User) => {
 };
 
 export const createConversation = async (
-  newConversation: ConversationWithMessage,
+  newConversation: any,
   talkerId: number
 ) => {
-  const { message, roomId } = newConversation;
-  return await prismaClient.conversation.create({
+  const { message, room } = newConversation;
+  const createdConversation = prismaClient.conversation.create({
     data: {
-      message: { create: { ...message } },
-      room: { connect: { id: roomId } },
+      message: {
+        create: {
+          text: message.text,
+          createdAt: message.createdAt,
+          sender: {
+            connect: {
+              id: message.senderId,
+            },
+          },
+        },
+      },
       talker: { connect: { id: talkerId } },
+      room: { connect: { id: room.id } },
+    },
+    include: {
+      message: true,
+      talker: { select: { name: true, id: true } },
+      room: { select: { name: true, id: true } },
     },
   });
+  prismaClient.room.update({
+    where: { id: room.id },
+    data: {
+      conversations: {
+        connect: [{ id: (await createdConversation).id }],
+      },
+    },
+  });
+  return createdConversation;
+};
+
+export const agree = async (id: number, newValue: number[]) => {
+  return await prismaClient.conversation.update({
+    where: { id },
+    data: { agree: newValue },
+    select: { agree: true },
+  });
+};
+
+export const disagree = async (id: number, newValue: number[]) => {
+  return await prismaClient.conversation.update({
+    where: { id },
+    data: { disagree: newValue },
+    select: { disagree: true },
+  });
+};
+
+export const getComments = async (id: number) => {
+  return await prismaClient.conversation.findUnique({
+    where: { id },
+    select: {
+      comments: {
+        include: {
+          message: true,
+          talker: {select: {name: true, id: true}}
+        },
+      },
+    },
+  });
+};
+
+export const comment = async (
+  conversationId: number,
+  userId: number,
+  comment: any
+) => {
+  const { message } = comment;
+  const createdComment = prismaClient.conversation.create({
+    data: {
+      message: {
+        create: {
+          text: message.text,
+          createdAt: message.createdAt,
+          sender: {
+            connect: {
+              id: message.senderId,
+            },
+          },
+        },
+      },
+      talker: { connect: { id: userId } },
+      conversation: { connect: { id: conversationId } },
+    },
+    include: { message: true, talker: {select: {id: true, name: true}} },
+  });
+  const up = await prismaClient.conversation.update({
+    where: { id: conversationId },
+    include: { message: true },
+    data: {
+      comments: {
+        connect: [
+          {
+            id: (await createdComment).id,
+          },
+        ],
+      },
+      commentsCount: {
+        increment: 1
+      },
+    },
+  });
+  return createdComment;
 };
 
 export const updateUserRooms = async (id: number, rooms: Room[]) => {
@@ -76,7 +170,7 @@ export const findUser = async (id: number) => {
       select: {
         name: true,
         id: true,
-        myrooms: { select: { name: true } },
+        myrooms: { select: { name: true, id: true } },
       },
     });
     return user;
@@ -117,42 +211,65 @@ export const setChat = async (
   await prismaClient.chat.upsert({
     where: { id },
     update: {
-      messages: { create: [{ ...message }] },
+      messages: {
+        create: [
+          {
+            text: message.text,
+            createdAt: message.createdAt,
+            sender: { connect: { id: senderId } },
+          },
+        ],
+      },
     },
     create: {
       messages: {
-        create: [{ ...message }],
+        create: [
+          {
+            text: message.text,
+            createdAt: message.createdAt,
+            sender: { connect: { id: senderId } },
+          },
+        ],
       },
       id,
     },
   });
 };
 
-export const findRoom = async (roomname: string) => {
+export const findRoom = async (id: number) => {
   try {
     return await prismaClient.room.findUniqueOrThrow({
-      where: {
-        name: roomname,
-      },
+      where: { id },
     });
   } catch (e) {
     return { error: "Room not found" };
   }
 };
 
-export const findRoomWithUsers = async (roomname: string) => {
+export const findRoomWithUsers = async (id: number) => {
   try {
     return await prismaClient.room.findUniqueOrThrow({
-      where: {
-        name: roomname,
-      },
+      where: {id},
       include: {
         users: {
           select: {
-            name: true, id: true
-          }
+            name: true,
+            id: true,
+          },
         },
-        conversations: { include: { message: true } },
+        conversations: {
+          include: {
+            message: true,
+            talker: {
+              select: { id: true, name: true },
+            },
+            room: {
+              select: { id: true, name: true },
+            },
+            comments: {}
+          },
+          orderBy: { id: "desc" },
+        },
       },
     });
   } catch (e) {
@@ -173,7 +290,7 @@ export const joinRoom = async (name: string, id: number) => {
       },
     },
   });
-  await prismaClient.room.update({
+  return await prismaClient.room.update({
     where: {
       name,
     },
@@ -191,7 +308,7 @@ export const getAllUsers = async () => {
 };
 
 export const getAllRooms = async (pageno: number, userid: number) => {
-  const take = 2;
+  const take = 10;
   const skip = take * pageno;
   const allrooms = await prismaClient.room.count();
   if (skip >= allrooms) return { status: "end of data" };
@@ -220,7 +337,7 @@ export const getAllRooms = async (pageno: number, userid: number) => {
         NOT: {
           users: {
             some: {
-              name: "Oluseun",
+              id: userid,
             },
           },
         },
