@@ -36,17 +36,16 @@ const wsServer = new Server(httpServer, {
 });
 let rooms: Room[] = [];
 wsServer.on("connection", (socket) => {
-  socket.on("rooms", (myrooms: Room[], me) => {
-    rooms = myrooms;
+  socket.on("online", (me) => {
     socket.join(me);
-    myrooms.forEach((room) => {
-      socket.join(`room${room.id}`);
-      wsServer.in(`room${room.id}`).emit("comeon", me);
-    });
-  }).on("joinroom", async (room: Room, joiner: string) => {
-    socket.join(`room${room.id}`);
-    socket.in(`room${room.id}`).emit("joinedroom", joiner, room.name);
-  }).on("receivedRoomMessage", (conversation) => {
+  }).on("joinroom", async (roomId, joinerId) => {
+    socket.join(`room${roomId}`);
+    socket.in(`room${roomId}`).emit("joinedroom", joinerId);
+  }).on("leftroom", (roomId, userId) => {
+    socket.leave(`room${roomId}`);
+    wsServer.in(`room${roomId}`).emit("goneoff", userId);
+  })
+  .on("receivedRoomMessage", (conversation) => {
     wsServer.in(`room${conversation.room.id}`).emit("message", conversation);
   }).on("commented", (comment, roomid) => {
     wsServer.in(`room${roomid}`).emit("comment", comment);
@@ -57,10 +56,6 @@ wsServer.on("connection", (socket) => {
   })
   .on("offline", (me) => {
     socket.leave(me);
-    rooms.forEach((room) => {
-      socket.leave(`room${room.id}`);
-      wsServer.in(`room${room.id}`).emit("goneoff", me);
-    });
   }).on("isonline", async (users: User[]) => {
     let status = users.map(async (user, i) =>
       (await wsServer.in(user.name).fetchSockets()).length > 0 ? true : false
