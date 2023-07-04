@@ -56,12 +56,6 @@ wsServer.on("connection", (socket) => {
   })
   .on("offline", (me) => {
     socket.leave(me);
-  }).on("isonline", async (users: User[]) => {
-    let status = users.map(async (user, i) =>
-      (await wsServer.in(user.name).fetchSockets()).length > 0 ? true : false
-    );
-    const stat = await Promise.all(status);
-    socket.emit("status", stat);
   }).on("chat", async (receiver: User, message: Message) => {
     wsServer.in(receiver.name).emit("receiveChat", message);
   });
