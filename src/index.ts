@@ -34,31 +34,57 @@ const httpServer = createServer(app);
 const wsServer = new Server(httpServer, {
   cors: { origin, allowedHeaders: allowedMethods },
 });
-let rooms: Room[] = [];
+const onlineInRoom = Object.create(null);
+
 wsServer.on("connection", (socket) => {
-  socket.on("online", (me) => {
-    socket.join(me);
-  }).on("joinroom", async (roomId, joinerId) => {
-    socket.join(`room${roomId}`);
-    socket.in(`room${roomId}`).emit("joinedroom", joinerId);
-  }).on("leftroom", (roomId, userId) => {
-    socket.leave(`room${roomId}`);
-    wsServer.in(`room${roomId}`).emit("goneoff", userId);
-  })
-  .on("receivedRoomMessage", (conversation) => {
-    wsServer.in(`room${conversation.room.id}`).emit("message", conversation);
-  }).on("commented", (comment, roomid) => {
-    wsServer.in(`room${roomid}`).emit("comment", comment);
-  }).on("agreed", (roomid, id, userid, data) => {
-    wsServer.in(`room${roomid}`).emit("agree", id, userid, data);
-  }).on("disagreed", (roomid, id, userid, data) => {
-    wsServer.in(`room${roomid}`).emit("disagree", id, userid, data);
-  })
-  .on("offline", (me) => {
-    socket.leave(me);
-  }).on("chat", async (receiver: User, message: Message) => {
-    wsServer.in(receiver.name).emit("receiveChat", message);
-  });
+  socket
+    .on("online", (me, myRooms:  number[]) => {
+      socket.join(me);
+      myRooms.forEach(roomid => socket.join(`room${roomid}`))
+    })
+    .on("joinroom", (roomId, roomname, joiner) => {
+      wsServer.in(`room${roomId}`).emit("joinedroom", `${joiner} joined ${roomname}`);
+      socket.join(`room${roomId}`);
+    })
+    .on("enterroom", async (roomId: number) => {
+      socket.join(`inroom${roomId}`);
+    })
+    .on("inroom", (roomId, joinerId) => {
+      let inRoom = onlineInRoom[roomId];
+      if (inRoom) {
+        !inRoom.includes(joinerId) && inRoom.push(joinerId);
+      }
+      else {
+        inRoom = [joinerId];
+        onlineInRoom[roomId] = inRoom;
+      }
+      wsServer.in(`inroom${roomId}`).emit("enteredroom", inRoom);
+    })
+    .on("leftroom", (roomId, userId) => {
+      socket.leave(`inroom${roomId}`);
+      const inRoom = onlineInRoom[roomId];
+      onlineInRoom[roomId] = inRoom.filter((inn: number) => inn != userId);
+      wsServer.in(`inroom${roomId}`).emit("goneoff", onlineInRoom[roomId]);
+    })
+    .on("receivedRoomMessage", (conversation) => {
+      wsServer.in(`room${conversation.room.id}`).emit("messages", conversation);
+    })
+    .on("commented", (comment, roomid) => {
+      wsServer.in(`inroom${roomid}`).emit("comment", comment);
+    })
+    .on("agreed", (roomid, id, userid, data) => {
+      wsServer.in(`inroom${roomid}`).emit("agree", id, userid, data);
+    })
+    .on("disagreed", (roomid, id, userid, data) => {
+      wsServer.in(`inroom${roomid}`).emit("disagree", id, userid, data);
+    })
+    .on("offline", (me, myRooms: number[]) => {
+      socket.leave(me);
+      myRooms.forEach(roomId => socket.leave(`room${roomId}`))
+    })
+    .on("chat", async (receiver: string, message: Message) => {
+      wsServer.in(receiver).emit("receiveChat", message);
+    });
 });
 app.use(cookieParser());
 
@@ -98,7 +124,11 @@ app.put("/user/createuser", async (request, response) => {
   request.on("data", async (data) => {
     const user = await createOrFindUser(JSON.parse(data));
     return response
-      .cookie("userid", user.id, { sameSite: "none", httpOnly: true, secure: true})
+      .cookie("userid", user.id, {
+        sameSite: "none",
+        httpOnly: true,
+        secure: true,
+      })
       .json(user);
   });
 });
@@ -170,27 +200,32 @@ app.put("/conversation/create", (request, response) => {
 
 app.post("/conversation/:id/agree", (request, response) => {
   request.on("data", async (data) => {
-    return response.json(await agree(Number(request.params.id), JSON.parse(data)))
-  })
-  
-})
+    return response.json(
+      await agree(Number(request.params.id), JSON.parse(data))
+    );
+  });
+});
 
 app.post("/conversation/:id/disagree", async (request, response) => {
   request.on("data", async (data) => {
-    return response.json(await disagree(Number(request.params.id), JSON.parse(data)))
-  })
-})
+    return response.json(
+      await disagree(Number(request.params.id), JSON.parse(data))
+    );
+  });
+});
 
 app.post("/conversation/:id/comment", (request, response) => {
-  const userId = Number(request.cookies.userid)
-  request.on('data', async (data) => { 
-    return response.json(await comment(Number(request.params.id), userId, JSON.parse(data)))
-  })
-})
+  const userId = Number(request.cookies.userid);
+  request.on("data", async (data) => {
+    return response.json(
+      await comment(Number(request.params.id), userId, JSON.parse(data))
+    );
+  });
+});
 
 app.get("/conversation/:id/getcomments", async (request, response) => {
-  return response.json(await getComments(Number(request.params.id)))
-})
+  return response.json(await getComments(Number(request.params.id)));
+});
 
 app.post("/chat/setchat", (request, response) => {
   request.on("data", async (data) => {
@@ -201,9 +236,9 @@ app.post("/chat/setchat", (request, response) => {
 });
 
 app.post("/logout", (request, response) => {
-  response.clearCookie('userid')
-  response.send('logout')
-})
+  response.clearCookie("userid");
+  response.send("logout");
+});
 
 httpServer.listen(port, () => {
   console.log("server is up at " + port);

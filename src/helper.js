@@ -303,7 +303,7 @@ const getAllUsers = () => __awaiter(void 0, void 0, void 0, function* () {
 });
 exports.getAllUsers = getAllUsers;
 const getAllRooms = (pageno, userid) => __awaiter(void 0, void 0, void 0, function* () {
-    const take = 2;
+    const take = 10;
     const skip = take * pageno;
     const allrooms = yield prismaClient.room.count();
     if (skip >= allrooms)
@@ -333,7 +333,7 @@ const getAllRooms = (pageno, userid) => __awaiter(void 0, void 0, void 0, functi
                 NOT: {
                     users: {
                         some: {
-                            name: "Oluseun",
+                            id: userid,
                         },
                     },
                 },
