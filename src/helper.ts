@@ -1,14 +1,5 @@
-import { Message, Prisma, PrismaClient, Room, User } from "@prisma/client";
-
-const prismaClient = new PrismaClient();
-
-const conversationWithMessage = Prisma.validator<Prisma.ConversationArgs>()({
-  include: { message: true },
-});
-
-export type ConversationWithMessage = Prisma.ConversationGetPayload<
-  typeof conversationWithMessage
->;
+import { Message, Prisma, Room, User } from "@prisma/client";
+import { prisma } from "./db.server";
 
 /* const chatWithMessages = Prisma.validator<Prisma.ChatArgs>()({
   include: { messages: true },
@@ -16,14 +7,22 @@ export type ConversationWithMessage = Prisma.ConversationGetPayload<
 
 type ChatWithMessages = Prisma.ChatGetPayload<typeof chatWithMessages>; */
 
-export const createOrFindRoom = async (room: Room) => {
-  try {
-    return await prismaClient.room.findUniqueOrThrow({
-      where: { name: room.name },
-    });
-  } catch (e) {
-    return await prismaClient.room.create({ data: room });
-  }
+export const createRoom = async (
+  topic: string,
+  name: string,
+  creatorId: number
+) => {
+  return await prisma.room.create({
+    data: {
+      name,
+      creator: { connect: { id: creatorId } },
+      topic: {
+        connectOrCreate: { where: { name: topic }, create: { name: topic } },
+      },
+      members: { connect: { id: creatorId } },
+    },
+    include: { topic: true },
+  });
 };
 
 export const createOrFindUser = async (user: User) => {
@@ -31,12 +30,12 @@ export const createOrFindUser = async (user: User) => {
   let foundOrCreated;
   user.id = id;
   try {
-    foundOrCreated = await prismaClient.user.findUniqueOrThrow({
+    foundOrCreated = await prisma.user.findUniqueOrThrow({
       where: { id },
       select: { name: true, id: true },
     });
   } catch (e) {
-    foundOrCreated = await prismaClient.user.create({
+    foundOrCreated = await prisma.user.create({
       data: user,
       select: { name: true, id: true },
     });
@@ -45,67 +44,47 @@ export const createOrFindUser = async (user: User) => {
 };
 
 export const createConversation = async (
-  newConversation: any,
-  talkerId: number
+  talkerId: number,
+  roomId: number,
+  convo: string,
+  media?: string[]
 ) => {
-  const { message, room } = newConversation;
-  const createdConversation = prismaClient.conversation.create({
+  return prisma.conversation.create({
     data: {
-      message: {
-        create: {
-          text: message.text,
-          createdAt: message.createdAt,
-          sender: {
-            connect: {
-              id: message.senderId,
-            },
-          },
-        },
-      },
       talker: { connect: { id: talkerId } },
-      room: { connect: { id: room.id } },
+      room: { connect: { id: roomId } },
+      convo,
+      media,
     },
     include: {
-      message: true,
       talker: { select: { name: true, id: true } },
       room: { select: { name: true, id: true } },
+      _count: { select: { comments: true } },
     },
-  });
-  prismaClient.room.update({
-    where: { id: room.id },
-    data: {
-      conversations: {
-        connect: [{ id: (await createdConversation).id }],
-      },
-    },
-  });
-  return createdConversation;
-};
-
-export const agree = async (id: number, newValue: number[]) => {
-  return await prismaClient.conversation.update({
-    where: { id },
-    data: { agree: newValue },
-    select: { agree: true },
   });
 };
 
-export const disagree = async (id: number, newValue: number[]) => {
-  return await prismaClient.conversation.update({
+export const agree = async (id: number, agreer: number) => {
+  await prisma.conversation.update({
     where: { id },
-    data: { disagree: newValue },
-    select: { disagree: true },
+    data: { agree: { connect: { id: agreer } } },
+  });
+};
+
+export const disagree = async (id: number, disagreer: number) => {
+  await prisma.conversation.update({
+    where: { id },
+    data: { disagree: { connect: { id: disagreer } } },
   });
 };
 
 export const getComments = async (id: number) => {
-  return await prismaClient.conversation.findUnique({
+  return await prisma.conversation.findUnique({
     where: { id },
     select: {
       comments: {
         include: {
-          message: true,
-          talker: {select: {name: true, id: true}}
+          talker: { select: { name: true, id: true } },
         },
       },
     },
@@ -114,49 +93,28 @@ export const getComments = async (id: number) => {
 
 export const comment = async (
   conversationId: number,
-  userId: number,
-  comment: any
+  commentor: number,
+  comment: string,
+  roomId: number,
+  media?: string[]
 ) => {
-  const { message } = comment;
-  const createdComment = prismaClient.conversation.create({
-    data: {
-      message: {
-        create: {
-          text: message.text,
-          createdAt: message.createdAt,
-          sender: {
-            connect: {
-              id: message.senderId,
-            },
-          },
-        },
-      },
-      talker: { connect: { id: userId } },
-      conversation: { connect: { id: conversationId } },
-    },
-    include: { message: true, talker: {select: {id: true, name: true}} },
-  });
-  const up = await prismaClient.conversation.update({
+  return await prisma.conversation.update({
     where: { id: conversationId },
-    include: { message: true },
     data: {
       comments: {
-        connect: [
-          {
-            id: (await createdComment).id,
-          },
-        ],
-      },
-      commentsCount: {
-        increment: 1
+        create: {
+          convo: comment,
+          media,
+          talker: { connect: { id: commentor } },
+          room: { connect: { id: roomId } },
+        },
       },
     },
   });
-  return createdComment;
 };
 
 export const updateUserRooms = async (id: number, rooms: Room[]) => {
-  await prismaClient.user.update({
+  await prisma.user.update({
     data: { myrooms: { connect: [...rooms] } },
     where: { id },
   });
@@ -165,26 +123,53 @@ export const updateUserRooms = async (id: number, rooms: Room[]) => {
 
 export const findUser = async (id: number) => {
   try {
-    const user = await prismaClient.user.findUniqueOrThrow({
+    return await prisma.user.findUniqueOrThrow({
       where: { id },
       select: {
         name: true,
         id: true,
-        myrooms: { select: { name: true, id: true } },
       },
     });
-    return user;
   } catch (e) {
     return { error: "User not found" };
   }
 };
 
-const computeId = (name1: string, name2: string) => {
+export const getMyRooms = async (id: number, count: number, take: number) => {
+  const skip = count * take;
+  return await prisma.user.findUnique({
+    where: { id },
+    select: {
+      myrooms: {
+        take,
+        skip,
+        orderBy: { id: "desc" },
+      },
+    },
+  });
+};
+
+export const getJoinedRooms = async (
+  id: number,
+  count: number,
+  take: number
+) => {
+  const skip = count * take;
+  return await prisma.user.findUnique({
+    where: { id },
+    select: {
+      joinedrooms: {
+        take,
+        skip,
+        orderBy: { id: "desc" },
+      },
+    },
+  });
+};
+
+export const computeId = (name1: string, name2: string) => {
   let key1 = 0,
     key2 = 0;
-  //const hash1 = crypto.createHash('md5').update(name1).digest('hex')
-  //const hash2 = crypto.createHash('md5').update(name2).digest('hex')
-
   for (let i = 0; i < name1.length; i++) {
     key1 += name1.charCodeAt(i);
   }
@@ -196,7 +181,7 @@ const computeId = (name1: string, name2: string) => {
 
 export const findChat = async (sender: number, receiver: number) => {
   const id = sender + receiver;
-  return await prismaClient.chat.findUnique({
+  return await prisma.chat.findUnique({
     where: { id },
     include: { messages: true },
   });
@@ -205,145 +190,150 @@ export const findChat = async (sender: number, receiver: number) => {
 export const setChat = async (
   senderId: number,
   receiverId: number,
-  message: Message
+  messages: Message[]
 ) => {
   const id = senderId + receiverId;
-  await prismaClient.chat.upsert({
+  const chat = await prisma.chat.findUnique({
     where: { id },
-    update: {
-      messages: {
-        create: [
-          {
-            text: message.text,
-            createdAt: message.createdAt,
-            sender: { connect: { id: senderId } },
+    select: { messages: true },
+  });
+  messages.forEach(async (message, i) => {
+    if (chat)
+      await prisma.chat.update({
+        where: { id },
+        data: {
+          messages: {
+            create: {
+              text: message.text,
+            },
           },
-        ],
-      },
-    },
-    create: {
-      messages: {
-        create: [
-          {
-            text: message.text,
-            createdAt: message.createdAt,
-            sender: { connect: { id: senderId } },
+        },
+      });
+    else
+      await prisma.chat.create({
+        data: {
+          id,
+          messages: {
+            create: {
+              text: message.text,
+            },
           },
-        ],
-      },
-      id,
-    },
+        },
+      });
   });
 };
 
 export const findRoom = async (id: number) => {
   try {
-    return await prismaClient.room.findUniqueOrThrow({
+    return await prisma.room.findUniqueOrThrow({
       where: { id },
+      include: { topic: true },
     });
   } catch (e) {
     return { error: "Room not found" };
   }
 };
 
-export const findRoomWithUsers = async (id: number) => {
+export const findRoomWithConversations = async (id: number, userId: number) => {
   try {
-    return await prismaClient.room.findUniqueOrThrow({
-      where: {id},
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { joinedrooms: { where: { id } } },
+    });
+    const isMember = user!.joinedrooms.length > 0;
+    const room = await prisma.room.findUniqueOrThrow({
+      where: { id },
       include: {
-        users: {
-          select: {
-            name: true,
-            id: true,
-          },
-        },
         conversations: {
           include: {
-            message: true,
             talker: {
               select: { id: true, name: true },
             },
             room: {
               select: { id: true, name: true },
             },
-            comments: {}
+            _count: {
+              select: { comments: true },
+            },
+            agree: true,
+            disagree: true,
           },
           orderBy: { id: "desc" },
         },
+        topic: true,
       },
     });
+    return { room, isMember };
   } catch (e) {
     return { error: "Room not found" };
   }
 };
 
-export const joinRoom = async (name: string, id: number) => {
-  await prismaClient.user.update({
-    where: { id },
-    data: {
-      myrooms: {
-        connect: [
-          {
-            name,
-          },
-        ],
+export const findRoomUsers = async (
+  roomId: number,
+  count: number,
+  take: number
+) => {
+  const skip = count * take;
+  return await prisma.room.findUnique({
+    where: { id: roomId },
+    select: {
+      members: {
+        select: { id: true, name: true },
+        skip,
+        take,
+        orderBy: { id: "asc" },
       },
     },
   });
-  return await prismaClient.room.update({
-    where: {
-      name,
-    },
-    data: {
-      users: { connect: [{ id }] },
-      usercount: {
-        increment: 1,
-      },
-    },
+};
+
+export const joinRoom = async (roomId: number, userId: number) => {
+  await prisma.room.update({
+    where: { id: roomId },
+    data: { members: { connect: { id: userId } } },
   });
+};
+
+export const leaveRoom = async (roomId: number, userId: number) => {
+  await prisma.room.update({
+    where: { id: roomId },
+    data: { members: { disconnect: { id: userId } } },
+  });
+};
+
+export const getTopics = async () => {
+  return await prisma.topic.findMany();
 };
 
 export const getAllUsers = async () => {
-  return await prismaClient.user.findMany();
+  return await prisma.user.findMany();
 };
 
 export const getAllRooms = async (pageno: number, userid: number) => {
-  const take = 10;
+  const take = 20;
   const skip = take * pageno;
-  const allrooms = await prismaClient.room.count();
-  if (skip >= allrooms) return { status: "end of data" };
+  const allrooms = await prisma.room.count();
+  if (skip >= allrooms) return [];
   else {
-    const toprooms = await prismaClient.room.findMany({
-      orderBy: {
-        usercount: "desc",
-      },
+    const rooms = await prisma.room.findMany({
       take: take,
       skip: skip,
       where: {
         NOT: {
-          users: {
+          members: {
             some: {
               id: userid,
             },
           },
         },
       },
-    });
-    const others = await prismaClient.room.findMany({
-      take: take,
-      skip: skip,
-      orderBy: { usercount: "asc" },
-      where: {
-        NOT: {
-          users: {
-            some: {
-              id: userid,
-            },
-          },
-        },
+      select: {
+        name: true,
+        id: true,
       },
     });
-    return { toprooms, others };
+    return rooms;
   }
 };
 
@@ -351,14 +341,10 @@ export const deleteTables = async (names: string | string[]) => {
   let rowsAffected = 0;
   if (Array.isArray(names)) {
     names.forEach(async (name) => {
-      rowsAffected += await prismaClient.$executeRawUnsafe(
-        `DELETE FROM "${name}"`
-      );
+      rowsAffected += await prisma.$executeRawUnsafe(`DELETE FROM "${name}"`);
     });
   } else
-    rowsAffected += await prismaClient.$executeRawUnsafe(
-      `DELETE FROM "${names}"`
-    );
+    rowsAffected += await prisma.$executeRawUnsafe(`DELETE FROM "${names}"`);
   return rowsAffected;
 };
 

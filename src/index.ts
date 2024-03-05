@@ -3,18 +3,23 @@ import {
   agree,
   comment,
   createConversation,
-  createOrFindRoom,
   createOrFindUser,
+  createRoom,
   deleteTables,
   disagree,
   findChat,
   findRoom,
-  findRoomWithUsers,
+  findRoomUsers,
+  findRoomWithConversations,
   findUser,
   getAllRooms,
   getAllUsers,
   getComments,
+  getJoinedRooms,
+  getMyRooms,
+  getTopics,
   joinRoom,
+  leaveRoom,
   setChat,
   updateUserRooms,
 } from "./helper";
@@ -25,7 +30,7 @@ import * as dotenv from "dotenv";
 dotenv.config();
 
 const cookieParser = require("cookie-parser");
-const origin = process.env.ORIGIN || "http://127.0.0.1:5173";
+const origin = process.env.ORIGIN as string;
 const port = process.env.PORT ? process.env.PORT : 3000;
 const allowedMethods = ["PUT", "POST", "GET"];
 const app = express();
@@ -34,43 +39,52 @@ const httpServer = createServer(app);
 const wsServer = new Server(httpServer, {
   cors: { origin, allowedHeaders: allowedMethods },
 });
-const onlineInRoom = Object.create(null);
 
 wsServer.on("connection", (socket) => {
   socket
-    .on("online", (me, myRooms:  number[]) => {
+    .on("online", (me, myRooms: number[], joinedRooms: number[]) => {
       socket.join(me);
-      myRooms.forEach(roomid => socket.join(`room${roomid}`))
+      myRooms.forEach((roomid) => socket.join(`room${roomid}`));
+      joinedRooms.forEach((roomid) => socket.join(`room${roomid}`));
     })
-    .on("joinroom", (roomId, roomname, joiner) => {
-      wsServer.in(`room${roomId}`).emit("joinedroom", `${joiner} joined ${roomname}`);
+    .on("inroom", (roomId, username) => {
+      socket.join(`${username}${roomId}`);
+      socket.join(`room${roomId}`)
+      wsServer.in(`${username}${roomId}`).emit("inroomm", username);
+    })
+    .on("isOnline", async (members: string[]) => {
+      const sockets = await wsServer.fetchSockets();
+      const onlineStatus = sockets.map((socket, i) =>
+        members.map((member) => {
+          return socket.rooms.has(member);
+        })
+      );
+      socket.emit("onlineStatus", onlineStatus);
+    })
+    .on("joinroom", async (roomId, roomname, joiner) => {
+      wsServer
+        .in(`${joiner}${roomId}`)
+        .emit("joinedroom", `${joiner} joined ${roomname}`, joiner);
+      wsServer
+        .in(`room${roomId}`)
+        .emit("joinedroom", `${joiner} joined ${roomname}`, joiner);
       socket.join(`room${roomId}`);
     })
-    .on("enterroom", async (roomId: number) => {
-      socket.join(`inroom${roomId}`);
+    .on("leaveroom", (roomId, roomname, lefter) => {
+      wsServer
+        .in(`${lefter}${roomId}`)
+        .emit("leftroom", `${lefter} left ${roomname}`, lefter);
+      wsServer
+        .in(`room${roomId}`)
+        .emit("leftroom", `${lefter} left ${roomname}`, lefter);
+      socket.leave(`room${roomId}`);
     })
-    .on("inroom", (roomId, joinerId) => {
-      let inRoom = onlineInRoom[roomId];
-      if (inRoom) {
-        !inRoom.includes(joinerId) && inRoom.push(joinerId);
-      }
-      else {
-        inRoom = [joinerId];
-        onlineInRoom[roomId] = inRoom;
-      }
-      wsServer.in(`inroom${roomId}`).emit("enteredroom", inRoom);
-    })
-    .on("leftroom", (roomId, userId) => {
-      socket.leave(`inroom${roomId}`);
-      const inRoom = onlineInRoom[roomId];
-      onlineInRoom[roomId] = inRoom.filter((inn: number) => inn != userId);
-      wsServer.in(`inroom${roomId}`).emit("goneoff", onlineInRoom[roomId]);
-    })
-    .on("receivedRoomMessage", (conversation) => {
-      wsServer.in(`room${conversation.room.id}`).emit("messages", conversation);
+    .on("newconversation", (conversation) => {
+      wsServer.in(`room${conversation.room.id}`).emit("nc", conversation);
     })
     .on("commented", (comment, roomid) => {
       wsServer.in(`inroom${roomid}`).emit("comment", comment);
+      [];
     })
     .on("agreed", (roomid, id, userid, data) => {
       wsServer.in(`inroom${roomid}`).emit("agree", id, userid, data);
@@ -80,10 +94,15 @@ wsServer.on("connection", (socket) => {
     })
     .on("offline", (me, myRooms: number[]) => {
       socket.leave(me);
-      myRooms.forEach(roomId => socket.leave(`room${roomId}`))
+      myRooms.forEach((roomId) => socket.leave(`room${roomId}`));
     })
-    .on("chat", async (receiver: string, message: Message) => {
-      wsServer.in(receiver).emit("receiveChat", message);
+    .on("newchat", async (sender: User, receiver: string, message: Message) => {
+      wsServer.in(receiver).emit("receiveChat", message, sender);
+    })
+    .on("goingLive", (sdp: RTCSessionDescription, roomId: number, sender: string) => {
+      wsServer.in(`room${roomId}`).emit("incomingLive", sdp, sender)
+    }).on("sendingICE", (candidate, roomId, sender) => {
+      wsServer.in(`room${roomId}`).emit("receivingICE", candidate, sender)
     });
 });
 app.use(cookieParser());
@@ -114,12 +133,6 @@ app.post("/deletetables", (request, response) => {
   });
 });
 
-app.put("/room/createroom", async (request, response) => {
-  request.on("data", async (data) => {
-    return response.json(await createOrFindRoom(JSON.parse(data)));
-  });
-});
-
 app.put("/user/createuser", async (request, response) => {
   request.on("data", async (data) => {
     const user = await createOrFindUser(JSON.parse(data));
@@ -133,51 +146,29 @@ app.put("/user/createuser", async (request, response) => {
   });
 });
 
-app.get("/room/all/:pageno", async (request, response) => {
-  return response.json(
-    await getAllRooms(
-      Number(request.params.pageno),
-      Number(request.cookies.userid)
-    )
-  );
-});
-
-app.get("/user/all", async (request, response) => {
-  return response.json(await getAllUsers());
-});
-
-app.get("/room/:roomid", async (request, response) => {
-  const { roomid } = request.params;
-  return response.json(await findRoom(Number(roomid)));
-});
-
-app.post("/room/joinroom", (request, response) => {
-  request.on("data", async (roomname) => {
-    return response.json(
-      await joinRoom(roomname, Number(request.cookies.userid))
-    );
-  });
-});
-
-app.put("/trends/create", (request, response) => {
-  request.on("data", (data) => {});
-});
-
-app.get("/room/withusers/:id", async (request, response) => {
-  const { id } = request.params;
-  return response.json(await findRoomWithUsers(Number(id)));
-});
-
 app.get("/user/getuser", async (request, response) => {
   const userid = request.cookies.userid;
   return response.json(await findUser(Number(userid)));
 });
 
-app.get("/chat/:receiver", async (request, response) => {
-  const { receiver } = request.params;
-  return response.json(
-    await findChat(Number(request.cookies.userid), Number(receiver))
+app.get("/user/getmyrooms/:count", async (request, response) => {
+  const userId = Number(request.cookies.userid);
+  const count = Number(request.params.count);
+  const take = 10;
+  return response.send((await getMyRooms(userId, count, take))?.myrooms);
+});
+
+app.get("/user/getjoinedrooms/:count", async (request, response) => {
+  const userId = Number(request.cookies.userid);
+  const count = Number(request.params.count);
+  const take = 10;
+  return response.send(
+    (await getJoinedRooms(userId, count, take))?.joinedrooms
   );
+});
+
+app.get("/user/all", async (request, response) => {
+  return response.json(await getAllUsers());
 });
 
 app.post("/user/updateuser", (request, response) => {
@@ -190,41 +181,55 @@ app.post("/user/updateuser", (request, response) => {
   });
 });
 
-app.put("/conversation/create", (request, response) => {
+app.put("/room/createroom", async (request, response) => {
   request.on("data", async (data) => {
-    response.json(
-      await createConversation(JSON.parse(data), Number(request.cookies.userid))
-    );
-  });
-});
-
-app.post("/conversation/:id/agree", (request, response) => {
-  request.on("data", async (data) => {
+    const room = JSON.parse(data);
     return response.json(
-      await agree(Number(request.params.id), JSON.parse(data))
+      await createRoom(room.topic.name, room.name, room.creatorId)
     );
   });
 });
 
-app.post("/conversation/:id/disagree", async (request, response) => {
-  request.on("data", async (data) => {
+app.get("/room/all/:pageno", async (request, response) => {
+  return response.json(
+    await getAllRooms(
+      Number(request.params.pageno),
+      Number(request.cookies.userid)
+    )
+  );
+});
+
+app.get("/room/:roomid", async (request, response) => {
+  const { roomid } = request.params;
+  return response.json(await findRoom(Number(roomid)));
+});
+
+app.post("/room/joinroom", (request, response) => {
+  request.on("data", async (roomId) => {
     return response.json(
-      await disagree(Number(request.params.id), JSON.parse(data))
+      await joinRoom(Number(roomId), Number(request.cookies.userid))
     );
   });
 });
 
-app.post("/conversation/:id/comment", (request, response) => {
-  const userId = Number(request.cookies.userid);
-  request.on("data", async (data) => {
+app.post("/room/leaveroom", (request, response) => {
+  request.on("data", async (roomId) => {
     return response.json(
-      await comment(Number(request.params.id), userId, JSON.parse(data))
+      await leaveRoom(Number(roomId), Number(request.cookies.userid))
     );
   });
 });
 
-app.get("/conversation/:id/getcomments", async (request, response) => {
-  return response.json(await getComments(Number(request.params.id)));
+app.get("/room/:id/withconversations", async (request, response) => {
+  const { id } = request.params;
+  return response.json(
+    await findRoomWithConversations(Number(id), Number(request.cookies.userid))
+  );
+});
+
+app.get("/room/:id/getmembers/:pageno", async (request, response) => {
+  const { id, pageno } = request.params;
+  return response.json(await findRoomUsers(Number(id), Number(pageno), 20));
 });
 
 app.post("/chat/setchat", (request, response) => {
@@ -233,6 +238,69 @@ app.post("/chat/setchat", (request, response) => {
     await setChat(Number(request.cookies.userid), receiverId, message);
     response.send({ done: "done" });
   });
+});
+
+app.get("/chat/:receiver", async (request, response) => {
+  const { receiver } = request.params;
+  return response.json(
+    await findChat(Number(request.cookies.userid), Number(receiver))
+  );
+});
+
+app.put("/trends/create", (request, response) => {
+  request.on("data", (data) => {});
+});
+
+app.put("/conversation/create", (request, response) => {
+  request.on("data", async (data) => {
+    const conversation = JSON.parse(data);
+    response.json(
+      await createConversation(
+        Number(request.cookies.userid),
+        conversation.roomId,
+        conversation.convo,
+        conversation.media
+      )
+    );
+  });
+});
+
+app.post("/conversation/:id/agree", (request, response) => {
+  request.on("data", async (data) => {
+    await agree(Number(request.params.id), Number(data));
+    response.send();
+  });
+});
+
+app.post("/conversation/:id/disagree", async (request, response) => {
+  request.on("data", async (data) => {
+    await disagree(Number(request.params.id), Number(data));
+    response.send();
+  });
+});
+
+app.post("/conversation/:id/comment", (request, response) => {
+  const userId = Number(request.cookies.userid);
+  request.on("data", async (data) => {
+    const coment = JSON.parse(data);
+    return response.json(
+      await comment(
+        Number(request.params.id),
+        userId,
+        coment.comment,
+        coment.roomId,
+        coment.media
+      )
+    );
+  });
+});
+
+app.get("/conversation/:id/getcomments", async (request, response) => {
+  return response.json(await getComments(Number(request.params.id)));
+});
+
+app.get("/topics", async (request, response) => {
+  response.send(await getTopics());
 });
 
 app.post("/logout", (request, response) => {

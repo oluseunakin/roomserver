@@ -42,7 +42,7 @@ const http_1 = require("http");
 const dotenv = __importStar(require("dotenv"));
 dotenv.config();
 const cookieParser = require("cookie-parser");
-const origin = process.env.ORIGIN || "http://127.0.0.1:5173";
+const origin = process.env.ORIGIN;
 const port = process.env.PORT ? process.env.PORT : 3000;
 const allowedMethods = ["PUT", "POST", "GET"];
 const app = (0, express_1.default)();
@@ -50,42 +50,49 @@ const httpServer = (0, http_1.createServer)(app);
 const wsServer = new socket_io_1.Server(httpServer, {
     cors: { origin, allowedHeaders: allowedMethods },
 });
-const onlineInRoom = Object.create(null);
 wsServer.on("connection", (socket) => {
     socket
-        .on("online", (me, myRooms) => {
+        .on("online", (me, myRooms, joinedRooms) => {
         socket.join(me);
-        myRooms.forEach(roomid => socket.join(`room${roomid}`));
+        myRooms.forEach((roomid) => socket.join(`room${roomid}`));
+        joinedRooms.forEach((roomid) => socket.join(`room${roomid}`));
     })
-        .on("joinroom", (roomId, roomname, joiner) => {
-        wsServer.in(`room${roomId}`).emit("joinedroom", `${joiner} joined ${roomname}`);
+        .on("inroom", (roomId, username) => {
+        socket.join(`${username}${roomId}`);
         socket.join(`room${roomId}`);
+        wsServer.in(`${username}${roomId}`).emit("inroomm", username);
     })
-        .on("enterroom", (roomId) => __awaiter(void 0, void 0, void 0, function* () {
-        socket.join(`inroom${roomId}`);
+        .on("isOnline", (members) => __awaiter(void 0, void 0, void 0, function* () {
+        const sockets = yield wsServer.fetchSockets();
+        const onlineStatus = sockets.map((socket, i) => members.map((member) => {
+            return socket.rooms.has(member);
+        }));
+        socket.emit("onlineStatus", onlineStatus);
     }))
-        .on("inroom", (roomId, joinerId) => {
-        let inRoom = onlineInRoom[roomId];
-        if (inRoom) {
-            !inRoom.includes(joinerId) && inRoom.push(joinerId);
-        }
-        else {
-            inRoom = [joinerId];
-            onlineInRoom[roomId] = inRoom;
-        }
-        wsServer.in(`inroom${roomId}`).emit("enteredroom", inRoom);
+        .on("joinroom", (roomId, roomname, joiner) => __awaiter(void 0, void 0, void 0, function* () {
+        wsServer
+            .in(`${joiner}${roomId}`)
+            .emit("joinedroom", `${joiner} joined ${roomname}`, joiner);
+        wsServer
+            .in(`room${roomId}`)
+            .emit("joinedroom", `${joiner} joined ${roomname}`, joiner);
+        socket.join(`room${roomId}`);
+    }))
+        .on("leaveroom", (roomId, roomname, lefter) => {
+        wsServer
+            .in(`${lefter}${roomId}`)
+            .emit("leftroom", `${lefter} left ${roomname}`, lefter);
+        wsServer
+            .in(`room${roomId}`)
+            .emit("leftroom", `${lefter} left ${roomname}`, lefter);
+        socket.leave(`room${roomId}`);
     })
-        .on("leftroom", (roomId, userId) => {
-        socket.leave(`inroom${roomId}`);
-        const inRoom = onlineInRoom[roomId];
-        onlineInRoom[roomId] = inRoom.filter((inn) => inn != userId);
-        wsServer.in(`inroom${roomId}`).emit("goneoff", onlineInRoom[roomId]);
-    })
-        .on("receivedRoomMessage", (conversation) => {
-        wsServer.in(`room${conversation.room.id}`).emit("messages", conversation);
+        .on("newconversation", (conversation) => {
+        wsServer.in(`room${conversation.room.id}`).emit("nc", conversation);
     })
         .on("commented", (comment, roomid) => {
         wsServer.in(`inroom${roomid}`).emit("comment", comment);
+        [];
     })
         .on("agreed", (roomid, id, userid, data) => {
         wsServer.in(`inroom${roomid}`).emit("agree", id, userid, data);
@@ -95,11 +102,16 @@ wsServer.on("connection", (socket) => {
     })
         .on("offline", (me, myRooms) => {
         socket.leave(me);
-        myRooms.forEach(roomId => socket.leave(`room${roomId}`));
+        myRooms.forEach((roomId) => socket.leave(`room${roomId}`));
     })
-        .on("chat", (receiver, message) => __awaiter(void 0, void 0, void 0, function* () {
-        wsServer.in(receiver).emit("receiveChat", message);
-    }));
+        .on("newchat", (sender, receiver, message) => __awaiter(void 0, void 0, void 0, function* () {
+        wsServer.in(receiver).emit("receiveChat", message, sender);
+    }))
+        .on("goingLive", (sdp, roomId, sender) => {
+        wsServer.in(`room${roomId}`).emit("incomingLive", sdp, sender);
+    }).on("sendingICE", (candidate, roomId, sender) => {
+        wsServer.in(`room${roomId}`).emit("receivingICE", candidate, sender);
+    });
 });
 app.use(cookieParser());
 app.use((request, response, next) => {
@@ -124,11 +136,6 @@ app.post("/deletetables", (request, response) => {
         return response.send(`${rows} have been deleted`);
     }));
 });
-app.put("/room/createroom", (request, response) => __awaiter(void 0, void 0, void 0, function* () {
-    request.on("data", (data) => __awaiter(void 0, void 0, void 0, function* () {
-        return response.json(yield (0, helper_1.createOrFindRoom)(JSON.parse(data)));
-    }));
-}));
 app.put("/user/createuser", (request, response) => __awaiter(void 0, void 0, void 0, function* () {
     request.on("data", (data) => __awaiter(void 0, void 0, void 0, function* () {
         const user = yield (0, helper_1.createOrFindUser)(JSON.parse(data));
@@ -141,35 +148,26 @@ app.put("/user/createuser", (request, response) => __awaiter(void 0, void 0, voi
             .json(user);
     }));
 }));
-app.get("/room/all/:pageno", (request, response) => __awaiter(void 0, void 0, void 0, function* () {
-    return response.json(yield (0, helper_1.getAllRooms)(Number(request.params.pageno), Number(request.cookies.userid)));
-}));
-app.get("/user/all", (request, response) => __awaiter(void 0, void 0, void 0, function* () {
-    return response.json(yield (0, helper_1.getAllUsers)());
-}));
-app.get("/room/:roomid", (request, response) => __awaiter(void 0, void 0, void 0, function* () {
-    const { roomid } = request.params;
-    return response.json(yield (0, helper_1.findRoom)(Number(roomid)));
-}));
-app.post("/room/joinroom", (request, response) => {
-    request.on("data", (roomname) => __awaiter(void 0, void 0, void 0, function* () {
-        return response.json(yield (0, helper_1.joinRoom)(roomname, Number(request.cookies.userid)));
-    }));
-});
-app.put("/trends/create", (request, response) => {
-    request.on("data", (data) => { });
-});
-app.get("/room/withusers/:id", (request, response) => __awaiter(void 0, void 0, void 0, function* () {
-    const { id } = request.params;
-    return response.json(yield (0, helper_1.findRoomWithUsers)(Number(id)));
-}));
 app.get("/user/getuser", (request, response) => __awaiter(void 0, void 0, void 0, function* () {
     const userid = request.cookies.userid;
     return response.json(yield (0, helper_1.findUser)(Number(userid)));
 }));
-app.get("/chat/:receiver", (request, response) => __awaiter(void 0, void 0, void 0, function* () {
-    const { receiver } = request.params;
-    return response.json(yield (0, helper_1.findChat)(Number(request.cookies.userid), Number(receiver)));
+app.get("/user/getmyrooms/:count", (request, response) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    const userId = Number(request.cookies.userid);
+    const count = Number(request.params.count);
+    const take = 10;
+    return response.send((_a = (yield (0, helper_1.getMyRooms)(userId, count, take))) === null || _a === void 0 ? void 0 : _a.myrooms);
+}));
+app.get("/user/getjoinedrooms/:count", (request, response) => __awaiter(void 0, void 0, void 0, function* () {
+    var _b;
+    const userId = Number(request.cookies.userid);
+    const count = Number(request.params.count);
+    const take = 10;
+    return response.send((_b = (yield (0, helper_1.getJoinedRooms)(userId, count, take))) === null || _b === void 0 ? void 0 : _b.joinedrooms);
+}));
+app.get("/user/all", (request, response) => __awaiter(void 0, void 0, void 0, function* () {
+    return response.json(yield (0, helper_1.getAllUsers)());
 }));
 app.post("/user/updateuser", (request, response) => {
     request.on("data", (data) => __awaiter(void 0, void 0, void 0, function* () {
@@ -177,29 +175,36 @@ app.post("/user/updateuser", (request, response) => {
         return response.json(updated);
     }));
 });
-app.put("/conversation/create", (request, response) => {
+app.put("/room/createroom", (request, response) => __awaiter(void 0, void 0, void 0, function* () {
     request.on("data", (data) => __awaiter(void 0, void 0, void 0, function* () {
-        response.json(yield (0, helper_1.createConversation)(JSON.parse(data), Number(request.cookies.userid)));
-    }));
-});
-app.post("/conversation/:id/agree", (request, response) => {
-    request.on("data", (data) => __awaiter(void 0, void 0, void 0, function* () {
-        return response.json(yield (0, helper_1.agree)(Number(request.params.id), JSON.parse(data)));
-    }));
-});
-app.post("/conversation/:id/disagree", (request, response) => __awaiter(void 0, void 0, void 0, function* () {
-    request.on("data", (data) => __awaiter(void 0, void 0, void 0, function* () {
-        return response.json(yield (0, helper_1.disagree)(Number(request.params.id), JSON.parse(data)));
+        const room = JSON.parse(data);
+        return response.json(yield (0, helper_1.createRoom)(room.topic.name, room.name, room.creatorId));
     }));
 }));
-app.post("/conversation/:id/comment", (request, response) => {
-    const userId = Number(request.cookies.userid);
-    request.on("data", (data) => __awaiter(void 0, void 0, void 0, function* () {
-        return response.json(yield (0, helper_1.comment)(Number(request.params.id), userId, JSON.parse(data)));
+app.get("/room/all/:pageno", (request, response) => __awaiter(void 0, void 0, void 0, function* () {
+    return response.json(yield (0, helper_1.getAllRooms)(Number(request.params.pageno), Number(request.cookies.userid)));
+}));
+app.get("/room/:roomid", (request, response) => __awaiter(void 0, void 0, void 0, function* () {
+    const { roomid } = request.params;
+    return response.json(yield (0, helper_1.findRoom)(Number(roomid)));
+}));
+app.post("/room/joinroom", (request, response) => {
+    request.on("data", (roomId) => __awaiter(void 0, void 0, void 0, function* () {
+        return response.json(yield (0, helper_1.joinRoom)(Number(roomId), Number(request.cookies.userid)));
     }));
 });
-app.get("/conversation/:id/getcomments", (request, response) => __awaiter(void 0, void 0, void 0, function* () {
-    return response.json(yield (0, helper_1.getComments)(Number(request.params.id)));
+app.post("/room/leaveroom", (request, response) => {
+    request.on("data", (roomId) => __awaiter(void 0, void 0, void 0, function* () {
+        return response.json(yield (0, helper_1.leaveRoom)(Number(roomId), Number(request.cookies.userid)));
+    }));
+});
+app.get("/room/:id/withconversations", (request, response) => __awaiter(void 0, void 0, void 0, function* () {
+    const { id } = request.params;
+    return response.json(yield (0, helper_1.findRoomWithConversations)(Number(id), Number(request.cookies.userid)));
+}));
+app.get("/room/:id/getmembers/:pageno", (request, response) => __awaiter(void 0, void 0, void 0, function* () {
+    const { id, pageno } = request.params;
+    return response.json(yield (0, helper_1.findRoomUsers)(Number(id), Number(pageno), 20));
 }));
 app.post("/chat/setchat", (request, response) => {
     request.on("data", (data) => __awaiter(void 0, void 0, void 0, function* () {
@@ -208,6 +213,44 @@ app.post("/chat/setchat", (request, response) => {
         response.send({ done: "done" });
     }));
 });
+app.get("/chat/:receiver", (request, response) => __awaiter(void 0, void 0, void 0, function* () {
+    const { receiver } = request.params;
+    return response.json(yield (0, helper_1.findChat)(Number(request.cookies.userid), Number(receiver)));
+}));
+app.put("/trends/create", (request, response) => {
+    request.on("data", (data) => { });
+});
+app.put("/conversation/create", (request, response) => {
+    request.on("data", (data) => __awaiter(void 0, void 0, void 0, function* () {
+        const conversation = JSON.parse(data);
+        response.json(yield (0, helper_1.createConversation)(Number(request.cookies.userid), conversation.roomId, conversation.convo, conversation.media));
+    }));
+});
+app.post("/conversation/:id/agree", (request, response) => {
+    request.on("data", (data) => __awaiter(void 0, void 0, void 0, function* () {
+        yield (0, helper_1.agree)(Number(request.params.id), Number(data));
+        response.send();
+    }));
+});
+app.post("/conversation/:id/disagree", (request, response) => __awaiter(void 0, void 0, void 0, function* () {
+    request.on("data", (data) => __awaiter(void 0, void 0, void 0, function* () {
+        yield (0, helper_1.disagree)(Number(request.params.id), Number(data));
+        response.send();
+    }));
+}));
+app.post("/conversation/:id/comment", (request, response) => {
+    const userId = Number(request.cookies.userid);
+    request.on("data", (data) => __awaiter(void 0, void 0, void 0, function* () {
+        const coment = JSON.parse(data);
+        return response.json(yield (0, helper_1.comment)(Number(request.params.id), userId, coment.comment, coment.roomId, coment.media));
+    }));
+});
+app.get("/conversation/:id/getcomments", (request, response) => __awaiter(void 0, void 0, void 0, function* () {
+    return response.json(yield (0, helper_1.getComments)(Number(request.params.id)));
+}));
+app.get("/topics", (request, response) => __awaiter(void 0, void 0, void 0, function* () {
+    response.send(yield (0, helper_1.getTopics)());
+}));
 app.post("/logout", (request, response) => {
     response.clearCookie("userid");
     response.send("logout");
