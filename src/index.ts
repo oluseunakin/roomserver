@@ -49,7 +49,7 @@ wsServer.on("connection", (socket) => {
     })
     .on("inroom", (roomId, username) => {
       socket.join(`${username}${roomId}`);
-      socket.join(`room${roomId}`)
+      socket.join(`room${roomId}`);
       wsServer.in(`${username}${roomId}`).emit("inroomm", username);
     })
     .on("isOnline", async (members: string[]) => {
@@ -99,10 +99,17 @@ wsServer.on("connection", (socket) => {
     .on("newchat", async (sender: User, receiver: string, message: Message) => {
       wsServer.in(receiver).emit("receiveChat", message, sender);
     })
-    .on("goingLive", (sdp: RTCSessionDescription, roomId: number, sender: string) => {
-      wsServer.in(`room${roomId}`).emit("incomingLive", sdp, sender)
-    }).on("sendingICE", (candidate, roomId, sender) => {
-      wsServer.in(`room${roomId}`).emit("receivingICE", candidate, sender)
+    .on("goinglive", (roomId: number, sender: string) =>
+      wsServer.in(`room${roomId}`).emit("setupLive", sender)
+    )
+    .on(
+      "live",
+      (sdp: RTCSessionDescription, roomId: number, sender: string) => {
+        wsServer.in(`room${roomId}`).emit("incomingLive", sdp, sender);
+      }
+    )
+    .on("sendingICE", (candidate, roomId, sender) => {
+      wsServer.in(`room${roomId}`).emit("receivingICE", candidate, sender);
     });
 });
 app.use(cookieParser());

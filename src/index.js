@@ -107,9 +107,11 @@ wsServer.on("connection", (socket) => {
         .on("newchat", (sender, receiver, message) => __awaiter(void 0, void 0, void 0, function* () {
         wsServer.in(receiver).emit("receiveChat", message, sender);
     }))
-        .on("goingLive", (sdp, roomId, sender) => {
+        .on("goinglive", (roomId, sender) => wsServer.in(`room${roomId}`).emit("setupLive", sender))
+        .on("live", (sdp, roomId, sender) => {
         wsServer.in(`room${roomId}`).emit("incomingLive", sdp, sender);
-    }).on("sendingICE", (candidate, roomId, sender) => {
+    })
+        .on("sendingICE", (candidate, roomId, sender) => {
         wsServer.in(`room${roomId}`).emit("receivingICE", candidate, sender);
     });
 });
